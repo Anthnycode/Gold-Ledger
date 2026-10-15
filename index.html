@@ -292,6 +292,7 @@ details pre { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; 
 .invsum { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 .invsum b { color: var(--text); font-weight: 500; }
 .invnote { font-size: 12px; color: var(--dim); }
+.cloud #pwBtn { display: none !important; }
 .restorebox { display: grid; gap: 6px; justify-items: start; margin-top: 6px; padding: 12px; border: 1px dashed var(--edge-hi); border-radius: 10px; font-size: 13px; }
 .restorebox span { color: var(--dim); font-size: 12px; line-height: 1.4; }
 /* ask: floating chat */
@@ -813,6 +814,7 @@ const csvRow = (e) => [e.assay, e.date, METALS[metalOf(e)].name, e.price.toFixed
 
 async function init() {
   const claude = window.claude;
+  if (!claude && CLOUD_CONFIG) return initCloud();
   const db = claude ? await claude.use("db").catch(() => null) : null;
   const user = db ? await claude.use("user").catch(() => null) : null;
   const uid = user ? await user.id().catch(() => null) : null;
@@ -1779,6 +1781,7 @@ function restoreLink() {
 function renderGate() {
   const card = $("gateCard"); card.replaceChildren();
   if (gateMode === "open") return;
+  if (gateMode.startsWith("cloud")) return renderCloudGate(card);
   const icon = el("div", "icon"); icon.innerHTML = LOCK_SVG;
   const err = el("div", "err"); err.id = "gateErr";
   const btns = el("div", "row2");
@@ -1880,6 +1883,180 @@ $("pwBtn").addEventListener("click", () => go("change", "open"));
 applyGate();
 setHidden(logsHidden);
 showTab(["inv", "cal", "calc"].includes(lsGet("gl.tab")) ? lsGet("gl.tab") : "vault");
+// ---------- online ledgers (website): your password finds your ledger on any device ----------
+// Paste the Firebase web config here to turn this on. Without it the site keeps ledgers in this browser only.
+const CLOUD_CONFIG = null;
+const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
+let cloud = null;            // { ref, key, id, data: {assays, tickets, items}, lastWrite, unsub, timer }
+let cloudFs = null, cloudPending = null;
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64u = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function pwBits(pw, label) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  return crypto.subtle.deriveBits({ name: "PBKDF2", salt: new TextEncoder().encode("gold-ledger/" + label + "/v1"), iterations: 150000, hash: "SHA-256" }, base, 256);
+}
+// The password picks the ledger (id) and locks its contents (key); neither leaves this device.
+async function cloudKeys(pw) {
+  const [idBits, keyBits] = await Promise.all([pwBits(pw, "id"), pwBits(pw, "key")]);
+  const id = [...new Uint8Array(idBits)].map((x) => x.toString(16).padStart(2, "0")).join("");
+  const key = await crypto.subtle.importKey("raw", keyBits, "AES-GCM", true, ["encrypt", "decrypt"]);
+  return { id, key, raw: b64u(keyBits) };
+}
+async function sealData(key, data) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(data)));
+  return { iv: b64u(iv), ct: b64u(ct) };
+}
+async function openData(key, doc) {
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64u(doc.iv) }, key, unb64u(doc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function loadScript(src) { return new Promise((ok, bad) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = bad; document.head.append(sc); }); }
+async function initCloud() {
+  profiles = []; cur = null;
+  store = null; tkStore = null; itStore = null;
+  setStatus("CONNECTING…", "");
+  gateMode = "cloud"; applyGate();
+  watchLivePrices(); setupStandaloneFiles();
+  try {
+    await loadScript(FIREBASE_SDK + "firebase-app-compat.js");
+    await loadScript(FIREBASE_SDK + "firebase-firestore-compat.js");
+    firebase.initializeApp(CLOUD_CONFIG);
+    cloudFs = firebase.firestore();
+  } catch { setStatus("OFFLINE · CAN'T REACH YOUR ONLINE LEDGER", "warn"); renderGate(); return; }
+  // Stay unlocked in this tab after a refresh.
+  let s = null; try { s = JSON.parse(ssGet("gl.cloud") || "null"); } catch {}
+  if (s && s.id && s.raw) {
+    try {
+      const key = await crypto.subtle.importKey("raw", unb64u(s.raw), "AES-GCM", true, ["encrypt", "decrypt"]);
+      const snap = await cloudFs.collection("ledgers").doc(s.id).get();
+      if (snap.exists) { await openCloud({ id: s.id, key, raw: s.raw }, await openData(key, snap.data())); return; }
+    } catch {}
+    ssDel("gl.cloud");
+  }
+  renderGate();
+}
+function cloudSave() {
+  clearTimeout(cloud.timer);
+  cloud.timer = setTimeout(async () => {
+    const data = { assays: rawEntries, tickets: rawTickets, items: rawItems };
+    try {
+      const sealed = await sealData(cloud.key, data);
+      cloud.lastWrite = new Date().toISOString();
+      await cloud.ref.set({ v: 1, ...sealed, updatedAt: cloud.lastWrite });
+      setStatus("SYNCED ONLINE · PRIVATE TO YOUR PASSWORD", "live");
+    } catch { setStatus("NOT SAVED ONLINE YET · CHECK YOUR CONNECTION", "warn"); }
+  }, 400);
+}
+function cloudList(name, get, set) {
+  const done = () => { render(); cloudSave(); };
+  return {
+    async add(e) { const id = name[0] + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); if (name === "assays") freshId = id; set([...get(), { id, ...e }]); done(); },
+    async update(id, e) { set(get().map((x) => x.id === id ? { id, ...e } : x)); done(); },
+    async remove(id) { set(get().filter((x) => x.id !== id)); done(); },
+  };
+}
+async function openCloud(k, data) {
+  if (cloud && cloud.unsub) cloud.unsub();
+  cloud = { ...k, ref: cloudFs.collection("ledgers").doc(k.id), lastWrite: null, timer: null };
+  rawEntries = data.assays || []; rawTickets = data.tickets || []; rawItems = data.items || [];
+  store = cloudList("assays", () => rawEntries, (v) => { rawEntries = v; });
+  tkStore = cloudList("tickets", () => rawTickets, (v) => { rawTickets = v; });
+  itStore = cloudList("items", () => rawItems, (v) => { rawItems = v; });
+  ssSet("gl.cloud", JSON.stringify({ id: k.id, raw: k.raw }));
+  gateMode = "open"; applyGate();
+  $("lockBtn").innerHTML = LOCK_SVG + "Lock";
+  setStatus("SYNCED ONLINE · PRIVATE TO YOUR PASSWORD", "live");
+  // Changes made on another phone or computer show up here.
+  cloud.unsub = cloud.ref.onSnapshot(async (snap) => {
+    if (!snap.exists || snap.metadata.hasPendingWrites) return;
+    const d = snap.data(); if (d.updatedAt === cloud.lastWrite) return;
+    try { const n = await openData(cloud.key, d); rawEntries = n.assays || []; rawTickets = n.tickets || []; rawItems = n.items || []; render(); } catch {}
+  });
+}
+// Pull the logs for one password out of a backup file made by either version of Gold Ledger.
+async function backupFor(pw, d) {
+  const list = Array.isArray(d.profiles) ? d.profiles : [];
+  if (!list.length) return { assays: d.assays, tickets: d.tickets || [], items: d.items || [] };
+  let match = null;
+  for (const p of list) if ((await hashPw(pw, p.salt)) === p.hash) { match = p; break; }
+  if (!match) return null;
+  const own = (e) => (e.profile ? e.profile === match.id : match.id === list[0].id);
+  return { assays: d.assays.filter(own), tickets: (d.tickets || []).filter(own), items: (d.items || []).filter(own) };
+}
+function renderCloudGate(card) {
+  const icon = el("div", "icon"); icon.innerHTML = LOCK_SVG;
+  const err = el("div", "err"); err.id = "gateErr";
+  const p = (t, small) => { const n = el("p", null, t); if (small) n.style.fontSize = "12px"; return n; };
+  const btns = el("div", "row2");
+  if (!cloudFs) { card.append(icon, el("h2", null, "Can't reach your ledger"), p("Check your internet connection, then refresh the page.")); return; }
+  if (gateMode === "cloud") {
+    const open = el("button", "cta", "Open ledger"); open.type = "submit";
+    btns.append(open);
+    card.append(icon, el("h2", null, "Enter your password"), p("Your password opens your ledger on any phone or computer. New here? Type a new password and you'll be asked to create a ledger with it."),
+      gateField("g-pw", "Password", "current-password"), err, btns);
+  } else {
+    const make = el("button", "cta", "Create ledger"); make.type = "submit";
+    const back = el("button", "ghost", "Back"); back.type = "button"; back.addEventListener("click", () => { cloudPending = null; gateMode = "cloud"; applyGate(); });
+    btns.append(make, back);
+    const imp = el("div", "restorebox");
+    imp.append(el("strong", null, "Made this password in the old Claude version?"), el("span", null, "Load the backup file you saved there and your logs come with it."));
+    const ib = el("button", "ghost", cloudPending && cloudPending.from ? "Backup loaded ✓ " + cloudPending.from.assays.length + " assays" : "Load backup file"); ib.type = "button";
+    ib.addEventListener("click", () => cloudBackupPick.click());
+    imp.append(ib);
+    card.append(icon, el("h2", null, "No ledger uses that password yet"), p("Create a new ledger with it, or load a backup to bring your old logs. Write the password down: it can't be recovered."),
+      gateField("g-confirm", "Type the password again to confirm", "new-password"), err, btns, imp);
+  }
+  setTimeout(() => { const f = card.querySelector("input"); if (f) f.focus(); }, 0);
+}
+const cloudBackupPick = Object.assign(document.createElement("input"), { type: "file", accept: ".json,application/json", hidden: true });
+document.body.append(cloudBackupPick);
+cloudBackupPick.addEventListener("change", async () => {
+  const f = cloudBackupPick.files[0]; cloudBackupPick.value = ""; if (!f || !cloudPending) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.app !== "gold-ledger" || !Array.isArray(d.assays)) throw new Error("not a backup");
+    const mine = await backupFor(cloudPending.pw, d);
+    if (!mine) { renderGate(); $("gateErr").textContent = "That backup has no ledger for this password. Check the password or pick another backup."; return; }
+    cloudPending.from = mine; renderGate();
+  } catch { renderGate(); $("gateErr").textContent = "That file isn't a Gold Ledger backup."; }
+});
+$("gateCard").addEventListener("submit", async (ev) => {
+  if (!gateMode.startsWith("cloud")) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  const err = $("gateErr"), btn = $("gateCard").querySelector("button[type=submit]");
+  if (!cloudFs) return;
+  btn.disabled = true; err.textContent = "Opening…";
+  try {
+    if (gateMode === "cloud") {
+      const pw = $("g-pw").value;
+      if (pw.length < 4) { err.textContent = "Passwords are at least 4 characters."; return; }
+      const k = await cloudKeys(pw);
+      const snap = await cloudFs.collection("ledgers").doc(k.id).get();
+      if (snap.exists) { await openCloud(k, await openData(k.key, snap.data())); return; }
+      cloudPending = { pw, k, from: null }; gateMode = "cloudnew"; applyGate();
+    } else {
+      if ($("g-confirm").value !== cloudPending.pw) { err.textContent = "That doesn't match the password you typed before."; return; }
+      if (cloudPending.pw.length < 4) { err.textContent = "Use at least 4 characters."; return; }
+      const data = cloudPending.from || { assays: [], tickets: [], items: [] };
+      const { k } = cloudPending; cloudPending = null;
+      const ref = cloudFs.collection("ledgers").doc(k.id);
+      const sealed = await sealData(k.key, data);
+      await ref.set({ v: 1, ...sealed, updatedAt: new Date().toISOString() });
+      await openCloud(k, data);
+      $("formMsg").textContent = data.assays.length ? "Ledger created with " + data.assays.length + " assays from your backup." : "Ledger created. Your password opens it on any device.";
+    }
+  } catch (e) {
+    err.textContent = "Couldn't reach your ledger. Check your connection and try again.";
+  } finally { if (btn.isConnected) btn.disabled = false; if (err.textContent === "Opening…") err.textContent = ""; }
+}, true);
+$("lockBtn").addEventListener("click", (ev) => {
+  if (!cloud) return;
+  ev.stopImmediatePropagation();
+  ssDel("gl.cloud"); location.reload();
+}, true);
+if (CLOUD_CONFIG) document.documentElement.classList.add("cloud");
+
 if (!window.claude) document.documentElement.classList.add("no-ai");
 init();
 </script>
