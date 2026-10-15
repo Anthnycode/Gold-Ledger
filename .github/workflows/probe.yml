@@ -13,19 +13,15 @@ jobs:
           npm i playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
           cat > t.mjs <<'JS'
           import { chromium } from 'playwright';
-          const b = await chromium.launch(); const p = await b.newPage();
-          p.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300)));
-          await p.goto('https://goldledger.web.app/', { waitUntil: 'networkidle' });
-          console.log('fab exists:', await p.$('#askFab') !== null);
-          const r = await p.evaluate(async () => {
-            const out = [];
-            for (const q of ['What is 2+2?', 'Name one gold karat.']) {
-              try { const x = await geminiSample([{ role: 'user', content: 'Answer in one short sentence.' }, { role: 'user', content: q }]); out.push('OK model=' + aiModel + ' text=' + x.text.trim()); }
-              catch (e) { out.push('ERR ' + e.code + ' ' + String(e.message)); }
-            }
-            return out.join('\n');
-          });
-          console.log('RESULT', r);
+          const b = await chromium.launch();
+          for (const vp of [{ width: 390, height: 844 }, { width: 1300, height: 900 }]) {
+            const p = await b.newPage({ viewport: vp });
+            const resp = await p.goto('https://goldledger.web.app/', { waitUntil: 'networkidle' });
+            console.log(vp.width, 'cache-control:', resp.headers()['cache-control'], 'has geminiSample:', await p.evaluate(() => typeof geminiSample));
+            await p.click('text=Create new password'); const pw = 'probe-' + Math.random().toString(36).slice(2);
+            await p.fill('#g-new', pw); await p.fill('#g-confirm', pw); await p.click('#gateCard .cta'); await p.waitForTimeout(5000);
+            console.log(vp.width, 'gate:', await p.getAttribute('#app', 'data-gate'), 'fab visible:', await p.isVisible('#askFab'), 'class:', await p.evaluate(() => document.documentElement.className), 'box:', JSON.stringify(await p.evaluate(() => document.getElementById('askFab').getBoundingClientRect())));
+          }
           await b.close();
           JS
           node t.mjs
