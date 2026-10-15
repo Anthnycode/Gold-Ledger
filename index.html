@@ -1885,7 +1885,14 @@ setHidden(logsHidden);
 showTab(["inv", "cal", "calc"].includes(lsGet("gl.tab")) ? lsGet("gl.tab") : "vault");
 // ---------- online ledgers (website): your password finds your ledger on any device ----------
 // Paste the Firebase web config here to turn this on. Without it the site keeps ledgers in this browser only.
-const CLOUD_CONFIG = null;
+const CLOUD_CONFIG = {
+  apiKey: "AIzaSyCWPEd85EcDYZXNkSTBQFLG75LIREIJwJ8",
+  authDomain: "gold-ledger-96dee.firebaseapp.com",
+  projectId: "gold-ledger-96dee",
+  storageBucket: "gold-ledger-96dee.firebasestorage.app",
+  messagingSenderId: "582511942774",
+  appId: "1:582511942774:web:1825c2c360c5fdf0219357",
+};
 const FIREBASE_SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
 let cloud = null;            // { ref, key, id, data: {assays, tickets, items}, lastWrite, unsub, timer }
 let cloudFs = null, cloudPending = null;
