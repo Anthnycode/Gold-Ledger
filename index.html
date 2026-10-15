@@ -1,0 +1,1870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090d">
+<meta name="description" content="Gold Ledger: a private assay profit ledger with live gold, silver and platinum prices.">
+<title>Gold Ledger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23fff1c2'/%3E%3Cstop offset='.5' stop-color='%23e0a838'/%3E%3Cstop offset='1' stop-color='%23f6d77a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M14 22h36l8 22H6z' fill='url(%23g)'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html, body { margin: 0; padding: 0; }
+body { background: #07090d; }
+/* Layout: an assay console. Command strip of totals on top, entry console on the left, a vault of ingot cards on the right. Deliberately dark-only. */
+:root {
+  --void: #07090d;
+  --deck: #0d1118;
+  --glass: rgba(22, 28, 38, 0.72);
+  --edge: rgba(148, 170, 200, 0.14);
+  --edge-hi: rgba(255, 210, 120, 0.45);
+  --text: #e9edf3;
+  --dim: #8592a6;
+  --gold-1: #fff1c4;
+  --gold-2: #f2c45a;
+  --gold-3: #b9851f;
+  --gold-4: #6e4a0c;
+  --ion: #6fe3ff;
+  --up: #57f0a8;
+  --down: #ff6b7d;
+  --display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+  --body: "Manrope", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --gold-metal: linear-gradient(135deg, var(--gold-1) 0%, var(--gold-2) 28%, var(--gold-3) 62%, var(--gold-2) 82%, var(--gold-1) 100%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--void); }
+body {
+  background:
+    radial-gradient(1200px 600px at 85% -10%, rgba(242, 196, 90, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(111, 227, 255, 0.07), transparent 60%),
+    var(--void);
+  color: var(--text); font-family: var(--body); font-size: 14px; line-height: 1.45; min-height: 100vh;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image: linear-gradient(var(--edge) 1px, transparent 1px), linear-gradient(90deg, var(--edge) 1px, transparent 1px);
+  background-size: 48px 48px; opacity: .35;
+  mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 75%);
+}
+.wrap:not([data-gate="open"]) .strip, .wrap:not([data-gate="open"]) .main { display: none; }
+.wrap[data-gate="open"] .gate { display: none; }
+.gate { display: grid; place-items: center; padding-block: 6vh; }
+.gatecard { width: min(420px, 100%); border: 1px solid var(--edge-hi); border-radius: 16px; background: var(--glass); backdrop-filter: blur(14px); padding: 26px 22px; display: grid; gap: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(242,196,90,.08); }
+.gatecard .icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: var(--gold-metal); color: #1a1205; }
+.gatecard .icon svg { width: 22px; height: 22px; display: block; }
+.gatecard h2 { font-size: 16px; }
+.gatecard p { margin: 0; color: var(--dim); font-size: 13px; }
+.gatecard .err { color: var(--down); font-family: var(--mono); font-size: 11px; min-height: 1.3em; }
+.gatecard .row2 { display: flex; gap: 8px; flex-wrap: wrap; }
+.gatecard .row2 .cta { flex: 1; }
+.linkbtn { background: none; border: none; padding: 0; color: var(--dim); font-family: var(--mono); font-size: 11px; text-decoration: underline; text-underline-offset: 3px; justify-self: start; font-weight: 400; }
+.linkbtn:hover { color: var(--text); }
+.danger { background: var(--down); color: #1a0508; border-color: transparent; }
+.lockbar { display: flex; gap: 6px; margin-top: 6px; }
+.lockbar button { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 5px 10px; font-family: var(--mono); font-weight: 500; letter-spacing: .04em; }
+.lockbar svg { width: 13px; height: 13px; display: block; }
+.leftcol { display: grid; gap: 18px; min-width: 0; }
+.today { position: relative; overflow: hidden; border: 1px solid var(--edge-hi); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; background: linear-gradient(135deg, rgba(242,196,90,.14), rgba(13,17,24,.85) 55%), var(--deck); }
+.today .tp-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.today .live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.today .price { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.02em; line-height: 1.05; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.today .price small { font-family: var(--mono); font-size: 12px; color: var(--dim); -webkit-text-fill-color: var(--dim); font-weight: 400; letter-spacing: 0; margin-left: 4px; }
+.today .grams { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.today .grams b { color: var(--text); font-weight: 500; }
+.today .foot2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.today .asof { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.today button { font-size: 11px; padding: 6px 10px; font-family: var(--mono); font-weight: 500; color: var(--gold-2); border-color: rgba(242,196,90,.35); }
+.wrap { position: relative; z-index: 1; max-width: 1440px; margin: 0 auto; padding-inline: 20px; padding-block: 22px 40px; display: grid; gap: 18px; }
+
+/* header + command strip */
+.top { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: stretch; }
+@media (max-width: 900px) { .top { grid-template-columns: 1fr; } }
+.brand { display: grid; align-content: center; gap: 4px; padding-right: 8px; }
+h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: clamp(24px, 3vw, 34px); letter-spacing: -0.02em; line-height: 1; }
+h1 .au { background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.status { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 8px; letter-spacing: .04em; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); box-shadow: 0 0 0 3px rgba(133,146,166,.15); flex: none; }
+.dot.live { background: var(--up); box-shadow: 0 0 10px var(--up); }
+.dot.warn { background: var(--gold-2); box-shadow: 0 0 10px var(--gold-2); }
+
+.strip { display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)); border: 1px solid var(--edge); border-radius: 14px; background: var(--glass); backdrop-filter: blur(14px); overflow: hidden; }
+@media (max-width: 1100px) { .strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat.hero { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat { padding: 12px 16px; display: grid; gap: 2px; min-width: 0; border-right: 1px solid var(--edge); border-bottom: 1px solid var(--edge); margin: 0 -1px -1px 0; }
+.k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.stat .v { font-family: var(--mono); font-weight: 500; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stat.hero { position: relative; grid-template-columns: minmax(0, 1fr) 120px; align-items: end; gap: 4px 16px; }
+.stat.hero .v { font-family: var(--display); font-weight: 700; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -0.02em; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; grid-column: 1; white-space: nowrap; overflow-wrap: normal; }
+.stat.hero .v.neg { background: none; color: var(--down); }
+.stat.hero .k { grid-column: 1; }
+.spark { grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 52px; }
+@media (max-width: 520px) { .stat.hero { grid-template-columns: minmax(0, 1fr) 96px; } .spark { width: 96px; } }
+
+/* main */
+.main { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.panel { border: 1px solid var(--edge); border-radius: 14px; background: var(--glass); backdrop-filter: blur(14px); padding: 16px; display: grid; gap: 14px; min-width: 0; }
+.ph { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+h2 { margin: 0; font-family: var(--display); font-weight: 500; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
+h2 .n { font-family: var(--mono); color: var(--gold-2); margin-left: 6px; letter-spacing: 0; }
+
+/* console form */
+form { display: grid; gap: 10px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+input, select {
+  font: inherit; font-family: var(--mono); font-size: 14px; color: var(--text);
+  background: rgba(7, 9, 13, 0.6); border: 1px solid var(--edge); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
+  transition: border-color .15s, box-shadow .15s;
+}
+input::placeholder { color: #4f5a6b; }
+input:hover, select:hover { border-color: rgba(148,170,200,.28); }
+input:focus-visible, select:focus-visible { outline: none; border-color: var(--gold-2); box-shadow: 0 0 0 3px rgba(242,196,90,.15); }
+.unit { position: relative; }
+.unit input { padding-right: 46px; }
+.unit span { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: var(--mono); font-size: 11px; color: var(--dim); pointer-events: none; }
+.karats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.karats button { padding: 8px 0; font-family: var(--mono); font-size: 12px; font-weight: 500; border-radius: 6px; background: rgba(7,9,13,.6); color: var(--dim); border: 1px solid var(--edge); }
+.hint { font-family: var(--mono); font-size: 10px; color: var(--dim); display: flex; gap: 6px; align-items: center; min-height: 18px; }
+.hint button { padding: 1px 7px; font-size: 10px; font-weight: 500; border-radius: 5px; color: var(--gold-2); border-color: rgba(242,196,90,.35); }
+.manual input { border-color: rgba(242,196,90,.55); }
+.panel.editing { border-color: var(--edge-hi); box-shadow: 0 0 0 1px rgba(242,196,90,.25), 0 10px 40px rgba(242,196,90,.08); }
+.edit-tag { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #1a1205; background: var(--gold-metal); padding: 3px 8px; border-radius: 5px; }
+.ingot.editing { border-color: var(--gold-2); box-shadow: 0 0 0 1px var(--gold-2), 0 0 24px rgba(242,196,90,.25); }
+.acts { display: flex; gap: 6px; }
+.edit { font-size: 11px; padding: 5px 9px; color: var(--dim); font-weight: 500; }
+.edit:hover { color: var(--gold-2); border-color: rgba(242,196,90,.4); }
+.karats button[aria-pressed="true"] { background: var(--gold-metal); color: #1a1205; border-color: transparent; font-weight: 700; box-shadow: 0 0 16px rgba(242,196,90,.25); }
+
+.readout { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--edge); border: 1px solid var(--edge); border-radius: 10px; overflow: hidden; }
+.readout div { background: rgba(7,9,13,.7); padding: 9px 11px; display: grid; gap: 1px; }
+.readout .v { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; }
+.readout .wide { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; }
+.readout .wide .v { font-family: var(--display); font-weight: 700; font-size: 24px; }
+.up { color: var(--up); } .down { color: var(--down); }
+
+button { font: inherit; cursor: pointer; border: 1px solid var(--edge); background: rgba(7,9,13,.6); color: var(--text); border-radius: 8px; padding: 9px 14px; font-weight: 600; }
+button:focus-visible { outline: 2px solid var(--gold-2); outline-offset: 2px; }
+.cta { position: relative; overflow: hidden; background: var(--gold-metal); color: #1a1205; border: none; font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding: 12px 16px; box-shadow: 0 6px 24px rgba(242,196,90,.22); }
+.cta:disabled { opacity: .55; cursor: default; }
+.btns { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.ghost { color: var(--dim); }
+.ghost:hover { color: var(--text); border-color: rgba(148,170,200,.3); }
+.msg { font-family: var(--mono); font-size: 11px; color: var(--dim); min-height: 1.3em; }
+details { font-size: 12px; color: var(--dim); }
+summary { cursor: pointer; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+details pre { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; margin: 8px 0 0; color: var(--text); opacity: .8; }
+
+/* vault */
+.tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.smode { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--edge); border-radius: 8px; flex: none; }
+.tools .smode button { border: none; background: none; padding: 5px 9px; border-radius: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+.tools .smode button[aria-pressed="true"] { background: rgba(242,196,90,.16); color: var(--gold-2); }
+.tools input { width: 260px; font-size: 12px; padding: 7px 10px; }
+@media (max-width: 520px) { .tools, .tools input { width: 100%; } .tools input { flex: 1; } }
+.tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--edge); border-radius: 10px; background: rgba(7,9,13,.6); }
+@media (max-width: 620px) { .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; } .tabs button { justify-content: center; } }
+.tabs button { border: none; background: none; padding: 7px 14px; border-radius: 7px; font-family: var(--display); font-weight: 500; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); display: inline-flex; align-items: center; gap: 6px; }
+.tabs button[aria-selected="true"] { background: var(--gold-metal); color: #1a1205; font-weight: 700; }
+.tabs .n { font-family: var(--mono); letter-spacing: 0; }
+.eye { display: inline-grid; place-items: center; width: 34px; height: 32px; padding: 0; color: var(--dim); }
+.eye:hover, .eye[aria-pressed="true"] { color: var(--gold-2); border-color: rgba(242,196,90,.4); }
+.tools .eye { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 32px; padding: 0; flex: none; }
+.eye svg { display: block; width: 18px; height: 18px; margin: 0; }
+.karatsum { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.kchip { display: grid; min-width: 0; gap: 2px; text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--edge); background: rgba(7,9,13,.5); font-weight: 400; }
+.kchip:hover { border-color: var(--edge-hi); }
+.kchip[aria-pressed="true"] { border-color: var(--gold-2); box-shadow: 0 0 0 1px var(--gold-2); }
+.kchip .kk { font-family: var(--display); font-weight: 700; font-size: 16px; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kchip .kp { font-family: var(--mono); font-size: 14px; }
+.kchip .km { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.hiddenlogs { border: 1px dashed var(--edge); border-radius: 12px; padding: 30px 16px; text-align: center; color: var(--dim); display: grid; gap: 10px; justify-items: center; }
+.hiddenlogs svg { width: 28px; height: 28px; color: var(--gold-2); }
+.match { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+
+/* calculator */
+.calc { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .calc { grid-template-columns: 1fr; } }
+.cdisp { grid-column: 1 / -1; border: 1px solid var(--edge-hi); border-radius: 12px; padding: 12px 14px; background: linear-gradient(135deg, rgba(242,196,90,.10), rgba(7,9,13,.7)); display: grid; gap: 2px; min-width: 0; }
+.cdisp .expr { font-family: var(--mono); font-size: 13px; color: var(--dim); min-height: 1.4em; overflow-wrap: anywhere; text-align: right; }
+.cdisp .res { font-family: var(--display); font-weight: 700; font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.02em; text-align: right; overflow-wrap: anywhere; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.cdisp .res.err { background: none; color: var(--down); font-size: 16px; }
+.keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.keys button { padding: 0; height: 48px; font-family: var(--mono); font-size: 17px; font-weight: 500; border-radius: 10px; }
+.keys button:hover { border-color: var(--edge-hi); }
+.keys .op { color: var(--gold-2); }
+.keys .fn { color: var(--dim); font-size: 13px; }
+.keys .eq { background: var(--gold-metal); color: #1a1205; border: none; font-weight: 700; }
+.keys .zero { grid-column: span 2; }
+.cside { display: grid; gap: 14px; min-width: 0; }
+.cside .k { display: block; margin-bottom: 6px; }
+.sendto, .quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.sendto button, .quick button { font-size: 12px; padding: 8px 10px; text-align: left; font-weight: 500; }
+.sendto button:hover, .quick button:hover { color: var(--gold-2); border-color: rgba(242,196,90,.4); }
+.tape { display: grid; gap: 4px; font-family: var(--mono); font-size: 12px; }
+.tape button { display: flex; justify-content: space-between; gap: 10px; font-weight: 400; font-size: 12px; padding: 6px 10px; text-align: left; color: var(--dim); }
+.tape button b { color: var(--text); font-weight: 500; }
+.tape .none { color: var(--dim); }
+
+/* metals */
+:root { --silver-metal: linear-gradient(135deg, #8d96a3 0%, #e9eef4 30%, #b4bcc7 62%, #eef2f6 82%, #9aa3af 100%); --plat-metal: linear-gradient(135deg, #9fb0bd 0%, #e4f0f6 30%, #b9cbd6 62%, #f0f8fb 82%, #a6b8c4 100%); }
+.metals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; border: 1px solid var(--edge); border-radius: 9px; background: rgba(7,9,13,.5); }
+.metals button { border: none; background: none; padding: 8px 0; border-radius: 6px; font-family: var(--display); font-size: 11px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.metals button[aria-pressed="true"] { color: #1a1205; font-weight: 700; }
+.metals button[data-m="gold"][aria-pressed="true"] { background: var(--gold-metal); }
+.metals button[data-m="silver"][aria-pressed="true"] { background: var(--silver-metal); }
+.metals button[data-m="platinum"][aria-pressed="true"] { background: var(--plat-metal); }
+.ingot.m-silver .bar { background: var(--silver-metal); background-size: 200% 100%; color: #161b22; }
+.ingot.m-platinum .bar { background: var(--plat-metal); background-size: 200% 100%; color: #10202a; }
+.karats[data-metal="silver"] button[aria-pressed="true"] { background: var(--silver-metal); color: #161b22; box-shadow: 0 0 16px rgba(220,228,238,.18); }
+.karats[data-metal="platinum"] button[aria-pressed="true"] { background: var(--plat-metal); color: #10202a; box-shadow: 0 0 16px rgba(210,232,242,.18); }
+.bar .kt small { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-left: 6px; opacity: .8; }
+.kwother { font-family: var(--mono); font-size: 12px; color: var(--dim); display: flex; gap: 16px; flex-wrap: wrap; }
+.kwother b { color: var(--text); font-weight: 500; }
+/* tickets */
+.tkhead { display: flex; align-items: baseline; gap: 8px; }
+.tkhead .tn { font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: -0.02em; line-height: 1; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tkscope { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--edge); border-radius: 8px; }
+.tkscope button { border: none; background: none; padding: 4px 9px; border-radius: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+.tkscope button[aria-pressed="true"] { background: rgba(242,196,90,.16); color: var(--gold-2); }
+.tksec { display: grid; gap: 6px; }
+.tksec .tsh { display: flex; justify-content: space-between; align-items: baseline; }
+.tksec .tsh b { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+.tkgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tk { position: relative; min-width: 0; }
+.tk .add { width: 100%; display: grid; gap: 2px; text-align: left; padding: 9px 10px; border-radius: 10px; font-weight: 400; }
+.tk .add:hover { border-color: rgba(242,196,90,.45); }
+.tk .add:active { transform: scale(.97); }
+.tk .add.bump { border-color: var(--gold-2); box-shadow: 0 0 14px rgba(242,196,90,.25); }
+.tk .kk { font-family: var(--display); font-weight: 700; font-size: 14px; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.tk .c { font-family: var(--mono); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tk .c.zero { color: var(--dim); }
+.tk .undo { position: absolute; top: 5px; right: 5px; width: 24px; height: 22px; padding: 0; font-size: 14px; line-height: 1; color: var(--dim); border-radius: 6px; }
+.tk .undo:disabled { opacity: .3; cursor: default; }
+.tkdate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tkdate label { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.tkdate input { width: auto; padding: 6px 9px; font-size: 13px; }
+.tkdate .linkbtn { font-size: 11px; }
+.tklog { display: grid; gap: 4px; }
+.tklog details { border: 1px solid var(--edge); border-radius: 9px; background: rgba(7,9,13,.4); }
+.tklog summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 10px; padding: 7px 10px; font-family: var(--mono); font-size: 12px; }
+.tklog summary::-webkit-details-marker { display: none; }
+.tklog summary b { font-weight: 500; }
+.tklog summary span { color: var(--dim); overflow-wrap: anywhere; text-align: right; }
+.tklog ul { list-style: none; margin: 0; padding: 0 10px 8px; display: grid; gap: 3px; }
+.tklog li { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.tklog li button { padding: 2px 8px; font-size: 10px; font-weight: 500; color: var(--dim); }
+.tklog li button.confirm { background: var(--down); color: #1a0508; border-color: transparent; }
+.day .dt { font-family: var(--mono); font-size: 10px; color: var(--gold-2); }
+.unsoldtoggle { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px dashed var(--edge); border-radius: 10px; cursor: pointer; }
+.unsoldtoggle input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: #f2c45a; flex: none; }
+.unsoldtoggle span { display: grid; gap: 2px; }
+.unsoldtoggle b { font-size: 13px; font-weight: 600; }
+.unsoldtoggle small { font-size: 11px; color: var(--dim); line-height: 1.4; }
+#formPanel.unsold .unsoldtoggle { border-style: solid; border-color: rgba(242,196,90,.5); background: rgba(242,196,90,.06); }
+.ingot.unsold .bar { filter: saturate(.55) brightness(.85); }
+.ingot.unsold { border-style: dashed; }
+.sellbtn { color: var(--gold-2); border-color: rgba(242,196,90,.4); }
+.ingot.unsold .foot { flex-wrap: wrap; }
+.ingot.unsold .acts { width: 100%; }
+.ingot.unsold .acts .sellbtn { flex: 1; }
+.itemform { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--edge); border-radius: 12px; background: rgba(7,9,13,.35); }
+.itemform.editing { border-color: var(--gold-2); }
+.irow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .irow { grid-template-columns: 1fr; } }
+.icard { display: grid; gap: 8px; padding: 12px; border: 1px dashed var(--edge-hi); border-radius: 12px; background: linear-gradient(180deg, rgba(30,36,48,.7), rgba(12,15,21,.85)); min-width: 0; }
+.icard.editing { border-color: var(--gold-2); border-style: solid; }
+.icard .ih { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.icard .in { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.icard .ig { font-family: var(--display); font-weight: 700; font-size: 13px; white-space: nowrap; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.icard.m-silver .ig { background: var(--silver-metal); -webkit-background-clip: text; background-clip: text; }
+.icard.m-platinum .ig { background: var(--plat-metal); -webkit-background-clip: text; background-clip: text; }
+.icard .im { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.icard .im b { color: var(--text); font-weight: 500; }
+.icard .iv { display: flex; justify-content: space-between; align-items: end; gap: 8px; flex-wrap: wrap; border-top: 1px dashed var(--edge); padding-top: 8px; }
+.icard .iv .v { font-family: var(--display); font-weight: 700; font-size: 20px; }
+.icard .notes { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.invsum { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.invsum b { color: var(--text); font-weight: 500; }
+.invnote { font-size: 12px; color: var(--dim); }
+/* ask: floating chat */
+.fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 56px; height: 56px; padding: 0; border-radius: 50%; border: none; background: var(--gold-metal); color: #1a1205; display: grid; place-items: center; box-shadow: 0 8px 28px rgba(242,196,90,.35), 0 2px 8px rgba(0,0,0,.5); }
+.fab svg { width: 26px; height: 26px; }
+.fab:hover { transform: translateY(-2px); }
+.fab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--gold-2), 0 8px 28px rgba(242,196,90,.35); }
+.no-ai .fab, .no-ai .askpanel { display: none !important; }
+.wrap:not([data-gate="open"]) .fab, .wrap:not([data-gate="open"]) .askpanel { display: none !important; }
+.askpanel { position: fixed; right: 20px; bottom: 88px; z-index: 41; width: min(400px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 120px)); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 14px; border: 1px solid var(--edge-hi); border-radius: 16px; background: rgba(12,15,21,.96); backdrop-filter: blur(16px); box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+.askhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.askacts { display: flex; gap: 6px; }
+.askacts button { font-size: 11px; padding: 5px 9px; font-weight: 500; }
+.askpanel .ask { grid-template-rows: minmax(0, 1fr) auto auto; min-height: 0; }
+.askpanel .chat { min-height: 160px; max-height: none; height: 100%; }
+@media (max-width: 520px) { .fab { right: 16px; bottom: 16px; } .askpanel { right: 16px; left: 16px; width: auto; bottom: 84px; max-height: calc(100vh - 110px); } }
+/* ask */
+.ask { display: grid; gap: 10px; min-width: 0; }
+.chat { display: grid; gap: 10px; align-content: start; min-height: 280px; max-height: 60vh; overflow-y: auto; padding: 4px 2px; }
+.bub { max-width: 88%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bub.me { justify-self: end; background: rgba(242,196,90,.14); border: 1px solid rgba(242,196,90,.3); }
+.bub.ai { justify-self: start; background: rgba(7,9,13,.55); border: 1px solid var(--edge); }
+.bub.ai.wait { color: var(--dim); font-family: var(--mono); font-size: 12px; }
+.bub.err { color: var(--down); }
+.askhint { color: var(--dim); font-size: 13px; line-height: 1.5; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { font-size: 12px; padding: 6px 10px; font-weight: 500; color: var(--dim); border-radius: 999px; }
+.chips button:hover { color: var(--gold-2); border-color: rgba(242,196,90,.4); }
+.askbar { display: flex; gap: 6px; }
+.askbar textarea { flex: 1; min-width: 0; resize: none; height: 46px; padding: 11px 12px; font: inherit; font-size: 14px; color: var(--text); background: rgba(7,9,13,.6); border: 1px solid var(--edge); border-radius: 10px; }
+.askbar textarea:focus { outline: none; border-color: rgba(242,196,90,.5); }
+.askbar button { flex: none; }
+/* weight by karat */
+.kw { display: grid; gap: 6px; }
+.kwgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 620px) { .kwgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.kwc { display: grid; gap: 2px; min-width: 0; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(7,9,13,.5); }
+.kwc.on { border-color: rgba(242,196,90,.35); }
+.kwc .kk { font-family: var(--display); font-weight: 700; font-size: 14px; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.kwc .kg { font-family: var(--mono); font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kwc:not(.on) .kg { color: var(--dim); }
+.kwc .kn { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+/* calendar */
+.calhead { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.calnav { display: flex; align-items: center; gap: 8px; }
+.calnav button { width: 34px; height: 32px; padding: 0; }
+.calnav .mname { font-family: var(--display); font-weight: 700; font-size: 18px; min-width: 170px; text-align: center; }
+.monthtotal { display: grid; justify-items: end; }
+.monthtotal .v { font-family: var(--display); font-weight: 700; font-size: clamp(24px, 3vw, 34px); letter-spacing: -0.02em; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.monthtotal .v.neg { background: none; color: var(--down); }
+.monthstats { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.monthstats b { color: var(--text); font-weight: 500; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal .dow { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--dim); text-align: center; padding-bottom: 2px; }
+.day { min-height: 76px; border-radius: 9px; border: 1px solid var(--edge); background: rgba(7,9,13,.45); padding: 6px 7px; display: grid; align-content: space-between; gap: 4px; min-width: 0; position: relative; overflow: hidden; }
+.day.out { opacity: .25; }
+.day .dn { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+.day.today .dn { color: var(--ion); font-weight: 700; }
+.day.has { border-color: rgba(242,196,90,.35); background: linear-gradient(180deg, rgba(242,196,90, calc(var(--heat) * .32)), rgba(242,196,90, calc(var(--heat) * .08))), rgba(7,9,13,.45); cursor: pointer; }
+.day.has:hover { border-color: var(--gold-2); }
+.day .dp { font-family: var(--mono); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.day .dc { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+@media (max-width: 520px) { .day { min-height: 54px; padding: 4px 5px; } .day .dp { font-size: 10px; } .day .dc { display: none; } .cal { gap: 3px; } .calnav .mname { min-width: 120px; font-size: 15px; } }
+.year { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; align-items: end; height: 90px; }
+@media (max-width: 520px) { .year { grid-template-columns: repeat(6, minmax(0, 1fr)); height: 150px; } }
+.ym { display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; height: 100%; border: none; background: none; padding: 0; border-radius: 6px; }
+.ym .col { width: 100%; border-radius: 4px 4px 2px 2px; background: rgba(148,170,200,.18); min-height: 3px; }
+.ym.pos .col { background: var(--gold-metal); }
+.ym.negm .col { background: var(--down); opacity: .7; }
+.ym[aria-current="true"] .col { box-shadow: 0 0 0 2px var(--ion); }
+.ym .yl { font-family: var(--mono); font-size: 10px; color: var(--dim); text-align: center; }
+.ym[aria-current="true"] .yl { color: var(--ion); }
+.tools button { font-size: 12px; padding: 7px 12px; }
+.vault { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.ingot { position: relative; display: grid; border-radius: 12px; overflow: hidden; border: 1px solid var(--edge); background: linear-gradient(180deg, rgba(30,36,48,.85), rgba(12,15,21,.9)); transition: border-color .2s, transform .2s; min-width: 0; }
+.ingot:hover { border-color: var(--edge-hi); transform: translateY(-2px); }
+.bar {
+  position: relative; padding: 10px 12px 11px; color: #1d1405;
+  background: var(--gold-metal); background-size: 200% 100%;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: end;
+}
+.bar::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%); transform: translateX(-120%); pointer-events: none; }
+.bar .kt { font-family: var(--display); font-weight: 800; font-size: 22px; line-height: 1; letter-spacing: -0.02em; }
+.bar .wt { font-family: var(--mono); font-weight: 700; font-size: 13px; text-align: right; }
+.bar .sn { grid-column: 1 / -1; font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .75; margin-top: 4px; display: flex; justify-content: space-between; gap: 8px; }
+.specs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; padding: 11px 12px 4px; }
+.specs div { display: grid; min-width: 0; }
+.specs .v { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.foot { display: flex; align-items: end; justify-content: space-between; gap: 8px; padding: 8px 12px 12px; border-top: 1px dashed var(--edge); margin-top: 6px; }
+.foot .v { font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+.del { font-size: 11px; padding: 5px 9px; color: var(--dim); font-weight: 500; }
+.del:hover { color: var(--down); border-color: rgba(255,107,125,.4); }
+.del.confirm { background: var(--down); color: #1a0508; border-color: transparent; font-weight: 700; }
+.empty { grid-column: 1 / -1; border: 1px dashed var(--edge); border-radius: 12px; padding: 36px 16px; text-align: center; color: var(--dim); display: grid; gap: 6px; justify-items: center; }
+.empty .ghostbar { width: 120px; height: 34px; border-radius: 6px; border: 1px dashed var(--edge-hi); margin-bottom: 6px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ingot.fresh { animation: drop .6s cubic-bezier(.2,.9,.3,1.2); }
+  .ingot.fresh .bar::after { animation: shine 1.1s .25s ease-out; }
+  .cta::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.5) 50%, transparent 65%); transform: translateX(-120%); }
+  .cta:hover:not(:disabled)::after { animation: shine .9s ease-out; }
+}
+@keyframes drop { from { opacity: 0; transform: translateY(-14px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes shine { to { transform: translateX(120%); } }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app" data-gate="loading">
+  <div class="top">
+    <div class="brand">
+      <h1>Gold <span class="au">Ledger</span></h1>
+      <div class="status"><span class="dot" id="dot"></span><span id="storeNote">CONNECTING…</span></div>
+      <div class="lockbar" id="lockbar" hidden>
+        <button type="button" class="ghost" id="lockBtn"></button>
+        <button type="button" class="ghost" id="pwBtn" hidden>Password</button>
+      </div>
+    </div>
+    <div class="strip">
+      <div class="stat hero">
+        <span class="v" id="t-profit">$0.00</span>
+        <span class="k">Total profit</span>
+        <svg class="spark" id="spark" viewBox="0 0 150 52" preserveAspectRatio="none" role="img" aria-label="Cumulative profit over time"></svg>
+      </div>
+      <div class="stat"><span class="k">Total</span><span class="v" id="t-total">$0.00</span></div>
+      <div class="stat"><span class="k">Weight</span><span class="v" id="t-weight">0.00 g</span></div>
+      <div class="stat"><span class="k">Sierra scraped</span><span class="v" id="t-sierra">$0.00</span></div>
+      <div class="stat"><span class="k">Princess scraped</span><span class="v" id="t-princess">$0.00</span></div>
+    </div>
+  </div>
+
+  <section class="gate" aria-live="polite"><form class="gatecard" id="gateCard" novalidate></form></section>
+
+  <div class="main">
+    <div class="leftcol">
+    <section class="today" aria-labelledby="todayTitle">
+      <div class="tp-head"><h2 id="todayTitle">Today's price</h2><span class="live"><span class="dot" id="tpDot"></span><span id="tpState">Loading</span></span></div>
+      <div class="price" id="tpPrice">—<small>/ozt</small></div>
+      <div class="grams" id="tpGrams"><span>Gold spot price in US dollars</span></div>
+      <div class="foot2"><span class="asof" id="tpAsof">Waiting for the latest price…</span><button type="button" class="ghost" id="tpUse" hidden>Use this price</button></div>
+    </section>
+    <section class="panel" id="formPanel" aria-labelledby="calcTitle">
+      <div class="ph"><h2 id="calcTitle">New assay</h2><span class="edit-tag" id="editTag" hidden>Editing</span></div>
+      <form id="calc" novalidate>
+        <div class="row">
+          <div class="field"><label for="f-assay">Assay #</label><input type="text" id="f-assay" placeholder="A-1042" autocomplete="off"></div>
+          <div class="field"><label for="f-date">Date</label><input type="date" id="f-date"></div>
+        </div>
+        <div class="field">
+          <label id="metalLabel">Metal</label>
+          <div class="metals" role="group" aria-labelledby="metalLabel" id="metals">
+            <button type="button" data-m="gold" aria-pressed="true">Gold</button><button type="button" data-m="silver" aria-pressed="false">Silver</button><button type="button" data-m="platinum" aria-pressed="false">Platinum</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="f-price" id="priceLabel">Gold price</label><div class="unit"><input type="number" id="f-price" min="0" step="0.01" inputmode="decimal" value="2650"><span>/ozt</span></div></div>
+          <div class="field"><label for="f-weight">Weight</label><div class="unit"><input type="number" id="f-weight" min="0" step="0.01" inputmode="decimal" value="48.6"><span>g</span></div></div>
+        </div>
+        <div class="field">
+          <label id="karatLabel">Karat</label>
+          <div class="karats" role="group" aria-labelledby="karatLabel" id="karats"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="f-karat" id="exactLabel">Exact karat</label><div class="unit"><input type="number" id="f-karat" min="0" max="24" step="0.1" inputmode="decimal" value="14"><span id="karatUnit">K</span></div><div class="hint" id="purityHint"></div></div>
+          <div class="field" id="pgField"><label for="f-pergram">Per gram</label><div class="unit"><input type="number" id="f-pergram" min="0" step="0.01" inputmode="decimal"><span>$/g</span></div><div class="hint" id="pgHint"></div></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="f-sierra">Sierra scraped</label><div class="unit"><input type="number" id="f-sierra" min="0" step="0.01" inputmode="decimal" value="0"><span>$</span></div></div>
+          <div class="field"><label for="f-princess">Princess scraped</label><div class="unit"><input type="number" id="f-princess" min="0" step="0.01" inputmode="decimal" value="0"><span>$</span></div></div>
+        </div>
+        <div class="field"><label for="f-check">Check #</label><input type="text" id="f-check" placeholder="5531" autocomplete="off"></div>
+
+        <div class="readout" aria-live="polite">
+          <div><span class="k">Purity</span><span class="v" id="o-purity">—</span></div>
+          <div><span class="k">Total</span><span class="v" id="o-total">—</span></div>
+          <div class="wide"><span class="k">Profit</span><span class="v" id="o-profit">—</span></div>
+        </div>
+
+        <div class="btns">
+          <button type="submit" class="cta" id="saveBtn">Log to vault</button>
+          <button type="button" class="ghost" id="resetBtn">Clear</button>
+        </div>
+        <div class="msg" id="formMsg"></div>
+        <details>
+          <summary>How it's calculated</summary>
+          <pre>per gram = metal price ÷ 31.1035 × purity
+purity   = gold: hallmark fineness for whole
+           karats (14K = .585), else karat ÷ 24
+           silver/platinum: fineness ÷ 1000
+           (925 = .925)
+per gram can also be typed in by hand
+total    = weight (g) × per gram
+profit   = total − Sierra − Princess</pre>
+        </details>
+      </form>
+    </section>
+    <section class="panel" id="ticketPanel" aria-labelledby="tkTitle">
+      <div class="ph">
+        <div class="tkhead"><h2 id="tkTitle">Tickets scraped</h2><span class="tn" id="tkTotal">0</span></div>
+        <div class="tkscope" role="group" aria-label="Count tickets for" id="tkScope">
+          <button type="button" data-s="month" aria-pressed="true">Month</button><button type="button" data-s="year" aria-pressed="false">Year</button><button type="button" data-s="all" aria-pressed="false">All</button>
+        </div>
+      </div>
+      <div class="tkdate"><label for="tkDate">Ticket date</label><input type="date" id="tkDate"><button type="button" class="linkbtn" id="tkToday" hidden>Back to today</button></div>
+      <div id="tkGrid" style="display:grid;gap:12px">
+        <div class="tksec"><div class="tsh"><span class="k">Sierra</span><b id="tkTot-sierra">0</b></div><div class="tkgrid" id="tkGrid-sierra"></div></div>
+        <div class="tksec"><div class="tsh"><span class="k">Princess</span><b id="tkTot-princess">0</b></div><div class="tkgrid" id="tkGrid-princess"></div></div>
+      </div>
+      <div class="msg" id="tkMsg">Tap a karat to count a ticket on the date above. − takes the last one back.</div>
+      <div class="tklog" id="tkLog"></div>
+    </section>
+    </div>
+
+    <section class="panel" aria-label="Logs">
+      <div class="ph">
+        <div class="tabs" role="tablist" aria-label="View">
+          <button type="button" role="tab" id="tab-vault" aria-controls="view-vault" aria-selected="true">Vault <span class="n" id="t-count">0</span></button>
+          <button type="button" role="tab" id="tab-cal" aria-controls="view-cal" aria-selected="false">Calendar</button>
+          <button type="button" role="tab" id="tab-inv" aria-controls="view-inv" aria-selected="false">Items <span class="n" id="inv-count">0</span></button>
+          <button type="button" role="tab" id="tab-calc" aria-controls="view-calc" aria-selected="false">Calculator</button>
+        </div>
+        <div class="tools" id="vaultTools">
+          <div class="smode" role="group" aria-label="Search in"><button type="button" id="smAll" aria-pressed="true">All</button><button type="button" id="smAssay" aria-pressed="false">Assay #</button></div>
+          <input type="search" id="filter" placeholder="Search anything: 14K, 48.6, 1400, A-1042, 10/05" aria-label="Search logs">
+          <button type="button" class="ghost eye" id="eyeBtn" aria-pressed="false" aria-label="Hide logs" title="Hide logs"></button>
+          <button type="button" class="ghost" id="exportBtn" hidden>Export CSV</button>
+        </div>
+      </div>
+
+      <div id="view-vault" role="tabpanel" aria-labelledby="tab-vault" style="display:grid;gap:14px;min-width:0">
+        <div style="display:grid;gap:6px;min-width:0">
+          <span class="k">Totals by karat</span>
+          <div class="karatsum" id="karatsum"><span class="match">Karat totals appear once you log an assay.</span></div>
+        </div>
+        <div class="match" id="matchNote" hidden></div>
+        <div class="vault" id="vault">
+          <div class="empty"><div class="ghostbar"></div><strong>The vault is empty</strong><span>Fill in a new assay and press Log to vault. Each entry shows up here as a bar.</span></div>
+        </div>
+      </div>
+
+      <div id="view-inv" role="tabpanel" aria-labelledby="tab-inv" hidden style="display:grid;gap:14px;min-width:0">
+        <form class="itemform" id="itemForm" novalidate>
+          <div class="ph"><h2 id="itemTitle">Log an item</h2><span class="invnote">Unsold items stay out of your profit, month and year numbers.</span></div>
+          <div class="irow">
+            <div class="field iname"><label for="i-name">Item</label><input type="text" id="i-name" placeholder="Rope chain, class ring…" autocomplete="off"></div>
+            <div class="field"><label for="i-date">Date</label><input type="date" id="i-date"></div>
+          </div>
+          <div class="irow">
+            <div class="field"><label id="iMetalLabel">Metal</label><div class="metals" role="group" aria-labelledby="iMetalLabel" id="iMetals"><button type="button" data-m="gold" aria-pressed="true">Gold</button><button type="button" data-m="silver" aria-pressed="false">Silver</button><button type="button" data-m="platinum" aria-pressed="false">Platinum</button></div></div>
+            <div class="field"><label for="i-karat" id="iKaratLabel">Karat</label><div class="unit"><input type="number" id="i-karat" min="0" step="0.1" inputmode="decimal" list="iGrades" value="14"><span id="iKaratUnit">K</span></div><datalist id="iGrades"></datalist></div>
+          </div>
+          <div class="irow">
+            <div class="field"><label for="i-weight">Weight</label><div class="unit"><input type="number" id="i-weight" min="0" step="0.01" inputmode="decimal"><span>g</span></div></div>
+            <div class="field"><label for="i-paid">Paid</label><div class="unit"><input type="number" id="i-paid" min="0" step="0.01" inputmode="decimal" placeholder="0"><span>$</span></div></div>
+          </div>
+          <div class="field"><label for="i-notes">Notes</label><input type="text" id="i-notes" placeholder="Optional: ticket #, where it's kept…" autocomplete="off"></div>
+          <div class="btns"><button type="submit" class="cta" id="itemSave">Log item</button><button type="button" class="ghost" id="itemReset">Clear</button></div>
+          <div class="msg" id="itemMsg"></div>
+        </form>
+        <div class="invsum" id="invSum"></div>
+        <div class="vault" id="invList"></div>
+      </div>
+
+      <div id="view-calc" role="tabpanel" aria-labelledby="tab-calc" hidden style="min-width:0">
+        <div class="calc">
+          <div class="cdisp" aria-live="polite"><div class="expr" id="cExpr"></div><div class="res" id="cRes">0</div></div>
+          <div class="keys" id="cKeys">
+            <button type="button" class="fn" data-c="clear">C</button><button type="button" class="fn" data-c="back" aria-label="Backspace">⌫</button><button type="button" class="fn" data-c="(">(</button><button type="button" class="fn" data-c=")">)</button>
+            <button type="button" data-c="7">7</button><button type="button" data-c="8">8</button><button type="button" data-c="9">9</button><button type="button" class="op" data-c="/" aria-label="Divide">÷</button>
+            <button type="button" data-c="4">4</button><button type="button" data-c="5">5</button><button type="button" data-c="6">6</button><button type="button" class="op" data-c="*" aria-label="Times">×</button>
+            <button type="button" data-c="1">1</button><button type="button" data-c="2">2</button><button type="button" data-c="3">3</button><button type="button" class="op" data-c="-" aria-label="Minus">−</button>
+            <button type="button" data-c="0" class="zero">0</button><button type="button" data-c=".">.</button><button type="button" class="op" data-c="+" aria-label="Plus">+</button>
+            <button type="button" class="fn" data-c="%">%</button><button type="button" class="fn" data-c="neg" aria-label="Plus or minus">±</button><button type="button" class="eq" data-c="=" style="grid-column: span 2">=</button>
+          </div>
+          <div class="cside">
+            <div><span class="k">Put answer in New assay</span><div class="sendto" id="cSend">
+              <button type="button" data-f="f-price">Metal price</button><button type="button" data-f="f-weight">Weight</button>
+              <button type="button" data-f="f-karat">Karat</button><button type="button" data-f="f-pergram">Per gram</button>
+              <button type="button" data-f="f-sierra">Sierra scraped</button><button type="button" data-f="f-princess">Princess scraped</button>
+            </div></div>
+            <div><span class="k">Insert a number</span><div class="quick" id="cQuick">
+              <button type="button" data-q="today">Today's price</button><button type="button" data-q="ozt">Grams per ozt</button>
+              <button type="button" data-q="pergram">Form per gram</button><button type="button" data-q="weight">Form weight</button>
+              <button type="button" data-q="total">Form total</button><button type="button" data-q="dwt">Grams per dwt</button>
+            </div></div>
+            <div><span class="k">Recent</span><div class="tape" id="cTape"><span class="none">Answers show up here. Tap one to reuse it.</span></div></div>
+            <div class="match" id="cMsg">Type with the keypad or your keyboard.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-cal" role="tabpanel" aria-labelledby="tab-cal" hidden style="display:grid;gap:14px;min-width:0">
+        <div class="calhead">
+          <div class="calnav">
+            <button type="button" class="ghost" id="calPrev" aria-label="Previous month">‹</button>
+            <span class="mname" id="calName">—</span>
+            <button type="button" class="ghost" id="calNext" aria-label="Next month">›</button>
+          </div>
+          <div class="monthtotal"><span class="k">Made this month</span><span class="v" id="calTotal">$0.00</span></div>
+        </div>
+        <div class="monthstats" id="calStats"></div>
+        <div class="kw"><span class="k" id="kwMonthLabel">Weight by karat this month</span><div class="kwgrid" id="kwMonth"></div></div>
+        <div class="cal" id="cal"></div>
+        <div style="display:grid;gap:6px">
+          <span class="k" id="yearLabel">Profit by month</span>
+          <div class="year" id="year"></div>
+        </div>
+        <div class="kw"><span class="k" id="kwYearLabel">Weight by karat this year</span><div class="kwgrid" id="kwYear"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <button type="button" class="fab" id="askFab" aria-expanded="false" aria-controls="askPanel" aria-label="Ask AI about your ledger" title="Ask AI about your ledger">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M9 10.5h6M9 13.5h4"/></svg>
+  </button>
+  <section class="askpanel" id="askPanel" role="dialog" aria-label="Ask AI" hidden>
+    <div class="askhead"><h2>Ask AI</h2><div class="askacts"><button type="button" class="ghost" id="askClear" title="Start a new chat">New chat</button><button type="button" class="ghost" id="askClose" aria-label="Close chat">✕</button></div></div>
+        <div class="ask">
+          <div class="chat" id="chat" aria-live="polite">
+            <p class="askhint" id="askHint">Ask anything about your ledger: profit, weights, karats, tickets, Sierra and Princess, or how to read your numbers. It reads the ledger that's open right now.</p>
+            <div class="chips" id="askChips">
+              <button type="button">How did I do this month?</button><button type="button">Which karat makes me the most profit?</button><button type="button">How many tickets did I use this week?</button><button type="button">What was my best day this year?</button>
+            </div>
+          </div>
+          <div class="askbar">
+            <textarea id="askBox" placeholder="Ask about your ledger…" aria-label="Your question"></textarea>
+            <button type="button" class="cta" id="askSend">Ask</button>
+            <button type="button" class="ghost" id="askStop" hidden>Stop</button>
+          </div>
+          <div class="msg" id="askMsg"></div>
+        </div>
+  </section>
+</div>
+
+<script>
+// ---------- Formula (swap this one function to change the math) ----------
+const G_PER_OZT = 31.1034768;
+const FINENESS = { 8: 0.333, 9: 0.375, 10: 0.417, 14: 0.585, 18: 0.750, 22: 0.916, 24: 0.999 };
+const purityOf = (k) => FINENESS[k] ?? k / 24;
+// Silver and platinum grades are fineness in parts per 1000 (925 = sterling).
+const METALS = {
+  gold: { name: "Gold", grades: [8, 9, 10, 14, 18, 22, 24], def: 14 },
+  silver: { name: "Silver", grades: [800, 900, 925, 958, 999], def: 925 },
+  platinum: { name: "Platinum", grades: [850, 900, 950, 999], def: 950 },
+};
+const metalOf = (e) => (METALS[e && e.metal] ? e.metal : "gold");
+const purityFor = (metal, k) => (metal === "gold" ? purityOf(k) : k / 1000);
+function computeGold(x) {
+  const purity = purityFor(metalOf(x), x.karat);
+  const autoPerGram = (x.price / G_PER_OZT) * purity;
+  const perGram = x.perGramManual && x.perGram > 0 ? x.perGram : autoPerGram;
+  const total = x.weight * perGram;
+  const profit = total - x.sierra - x.princess;
+  return { purity, autoPerGram, perGram, total, profit };
+}
+
+// ---------- helpers ----------
+const $ = (id) => document.getElementById(id);
+const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const money = (n) => (n == null || !isFinite(n)) ? "—" : usd.format(n);
+const num = (id) => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const fmtDate = (d) => { const [y, m, dd] = (d || "").split("-"); return y ? `${m}/${dd}/${y.slice(2)}` : "—"; };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+// ---------- form ----------
+let perGramManual = false;
+let editingId = null;
+let metal = "gold";
+const priceKey = (m) => (m === "gold" ? "gl.price" : "gl.price." + m);
+function renderKaratButtons() {
+  const box = $("karats"), m = METALS[metal];
+  box.dataset.metal = metal;
+  box.style.gridTemplateColumns = `repeat(${m.grades.length}, 1fr)`;
+  box.replaceChildren(...m.grades.map((k) => { const b = document.createElement("button"); b.textContent = metal === "gold" ? k + "K" : String(k); b.type = "button"; b.dataset.k = k; return b; }));
+  $("karatLabel").textContent = metal === "gold" ? "Karat" : "Fineness";
+  $("exactLabel").textContent = metal === "gold" ? "Exact karat" : "Exact fineness";
+  $("karatUnit").textContent = metal === "gold" ? "K" : "/1000";
+  $("f-karat").max = metal === "gold" ? "24" : "1000";
+  $("f-karat").step = metal === "gold" ? "0.1" : "1";
+  $("priceLabel").textContent = m.name + " price";
+  for (const b of $("metals").children) b.setAttribute("aria-pressed", String(b.dataset.m === metal));
+  syncKaratButtons();
+}
+function setMetal(m, keepValues) {
+  metal = METALS[m] ? m : "gold";
+  if (!keepValues) {
+    $("f-karat").value = METALS[metal].def;
+    const saved = lsGet(priceKey(metal)), mk = marketFor(metal);
+    $("f-price").value = saved || (mk && mk.price > 0 ? mk.price.toFixed(2) : "");
+    perGramManual = false;
+    delete $("f-price").dataset.touched;
+  }
+  renderKaratButtons(); recalc(); renderMarket();
+}
+$("metals").addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b && b.dataset.m !== metal) setMetal(b.dataset.m); });
+function syncKaratButtons() {
+  const k = num("f-karat");
+  for (const x of $("karats").children) x.setAttribute("aria-pressed", String(parseFloat(x.dataset.k) === k));
+}
+$("karats").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-k]"); if (!b) return;
+  $("f-karat").value = b.dataset.k; syncKaratButtons(); recalc();
+});
+$("f-karat").addEventListener("input", syncKaratButtons);
+$("f-pergram").addEventListener("input", () => { perGramManual = $("f-pergram").value.trim() !== ""; });
+$("pgHint").addEventListener("click", (e) => { if (e.target.closest("button")) { perGramManual = false; recalc(); } });
+function readInputs() {
+  return {
+    assay: $("f-assay").value.trim(), date: $("f-date").value || today(),
+    price: num("f-price"), check: $("f-check").value.trim(),
+    weight: num("f-weight"), karat: num("f-karat"),
+    perGram: num("f-pergram"), perGramManual, metal,
+    sierra: num("f-sierra"), princess: num("f-princess"),
+  };
+}
+function signed(el, n) { el.textContent = money(n); el.classList.toggle("up", n > 0); el.classList.toggle("down", n < 0); }
+function recalc() {
+  const x = readInputs(), r = computeGold(x);
+  $("o-purity").textContent = (r.purity * 100).toFixed(1) + "%";
+  $("purityHint").textContent = "Purity " + r.purity.toFixed(3);
+  if (!perGramManual) $("f-pergram").value = r.autoPerGram > 0 ? r.autoPerGram.toFixed(2) : "";
+  $("pgField").classList.toggle("manual", perGramManual);
+  if (perGramManual) $("pgHint").innerHTML = 'Typed in <button type="button">Use auto</button>';
+  else $("pgHint").textContent = metal === "gold" ? "Auto from gold price × karat" : "Auto from " + metal + " price × fineness";
+  $("o-total").textContent = money(r.total);
+  signed($("o-profit"), r.profit);
+  return { x, r };
+}
+$("calc").addEventListener("input", recalc);
+$("f-price").addEventListener("change", () => lsSet(priceKey(metal), $("f-price").value));
+function clearForm() {
+  for (const id of ["f-assay", "f-check", "f-weight"]) $(id).value = "";
+  $("f-sierra").value = "0"; $("f-princess").value = "0";
+  perGramManual = false;
+  $("f-date").value = today(); recalc();
+}
+function setEditing(id) {
+  editingId = id;
+  const on = id != null;
+  $("formPanel").classList.toggle("editing", on);
+  $("editTag").hidden = !on;
+  $("calcTitle").textContent = on ? "Edit assay" : "New assay";
+  $("saveBtn").textContent = on ? "Save changes" : "Log to vault";
+  $("resetBtn").textContent = on ? "Cancel" : "Clear";
+  render();
+}
+function startEdit(e) {
+  $("f-assay").value = e.assay || ""; $("f-date").value = e.date || today();
+  setMetal(metalOf(e), true);
+  $("f-price").value = e.price; $("f-weight").value = e.weight; $("f-karat").value = e.karat;
+  $("f-sierra").value = e.sierra; $("f-princess").value = e.princess; $("f-check").value = e.check || "";
+  perGramManual = !!e.perGramManual;
+  $("f-pergram").value = perGramManual ? e.perGram : "";
+  syncKaratButtons(); recalc();
+  $("formMsg").textContent = "Editing " + (e.assay ? "assay " + e.assay : "entry from " + fmtDate(e.date)) + ". Save changes or Cancel.";
+  setEditing(e.id);
+  $("formPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("f-assay").focus({ preventScroll: true });
+}
+$("resetBtn").addEventListener("click", () => {
+  itemSelling = null; unsoldSelling = null;
+  $("formMsg").textContent = "";
+  if (editingId) setEditing(null);
+  clearForm();
+});
+$("f-date").value = today();
+{ const p = lsGet("gl.price"); if (p) $("f-price").value = p; }
+renderKaratButtons();
+recalc();
+
+// ---------- storage: account db when available, browser storage otherwise ----------
+let entries = [];      // what the open ledger shows
+let rawEntries = [];   // everything stored on this account or browser
+let inventory = [];    // items logged but not sold yet; kept out of every total
+let store = null;
+let pendingDelete = null;
+let freshId = null;
+const COLLECTION = "assays";
+let rawTickets = [], tickets = [], tkStore = null;
+let rawItems = [], items = [], itStore = null;
+function localItems() {
+  const save = () => lsSet("gl.items", JSON.stringify(rawItems));
+  try { rawItems = JSON.parse(lsGet("gl.items") || "[]"); } catch { rawItems = []; }
+  render();
+  return {
+    async add(t) { rawItems.push({ id: "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ...t }); save(); render(); },
+    async update(id, t) { rawItems = rawItems.map((x) => x.id === id ? { id, ...t } : x); save(); render(); },
+    async remove(id) { rawItems = rawItems.filter((t) => t.id !== id); save(); render(); },
+  };
+}
+function localTickets() {
+  const save = () => lsSet("gl.tickets", JSON.stringify(rawTickets));
+  try { rawTickets = JSON.parse(lsGet("gl.tickets") || "[]"); } catch { rawTickets = []; }
+  render();
+  return {
+    async add(t) { rawTickets.push({ id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), ...t }); save(); render(); },
+    async remove(id) { rawTickets = rawTickets.filter((t) => t.id !== id); save(); render(); },
+  };
+}
+
+function setStatus(text, cls) { $("storeNote").textContent = text; $("dot").className = "dot " + (cls || ""); }
+
+function localStore() {
+  const load = () => { try { return JSON.parse(lsGet("gl.assays") || "[]"); } catch { return []; } };
+  const save = () => lsSet("gl.assays", JSON.stringify(rawEntries));
+  rawEntries = load(); render();
+  return {
+    async add(e) { const id = "l" + Date.now().toString(36); freshId = id; rawEntries.push({ id, ...e }); save(); render(); },
+    async update(id, e) { rawEntries = rawEntries.map((x) => x.id === id ? { id, ...e } : x); save(); render(); },
+    async remove(id) { rawEntries = rawEntries.filter((e) => e.id !== id); save(); render(); },
+  };
+}
+
+const CSV_HEAD = ["Assay #", "Date", "Metal", "Price", "Per gram", "Weight (g)", "Karat / fineness", "Total", "Check #", "Sierra scraped", "Princess scraped", "Profit"];
+const csvRow = (e) => [e.assay, e.date, METALS[metalOf(e)].name, e.price.toFixed(2), e.perGram.toFixed(2), e.weight, gradeLabel(e), e.total.toFixed(2), e.check, e.sierra.toFixed(2), e.princess.toFixed(2), e.profit.toFixed(2)];
+
+async function init() {
+  const claude = window.claude;
+  const db = claude ? await claude.use("db").catch(() => null) : null;
+  const user = db ? await claude.use("user").catch(() => null) : null;
+  const uid = user ? await user.id().catch(() => null) : null;
+  const canWrite = user ? await Promise.resolve(user.can("data.write")).catch(() => null) : null;
+  if (!db || !uid || canWrite === false) {
+    store = localStore();
+    tkStore = localTickets();
+    itStore = localItems();
+    lockStore = localLock;
+    setStatus(db && uid ? "SAVED IN THIS BROWSER ONLY · VIEW-ONLY ACCESS" : "SAVED ON THIS DEVICE", "warn");
+  } else {
+    // Each person gets their own private ledger; nobody else (the owner included) can read it.
+    const ledgerDoc = db.doc("data/users/" + uid + "/ledger");
+    const col = ledgerDoc.collection("assays");
+    lockStore = {
+      async get() { const d = await ledgerDoc.get(); return d.exists ? normProfiles(d.data()) : []; },
+      async set(list) { try { await ledgerDoc.set({ profiles: list }); } catch (e) { if (e && e.code === "invalid_argument") { lockStore = localLock; return localLock.set(list); } throw e; } },
+    };
+    let unsub = null, tunsub = null, iunsub = null;
+    const tcol = ledgerDoc.collection("tickets");
+    const tguard = (op, fn) => async (a) => { try { return await fn(a); } catch (e) { if (e && e.code === "invalid_argument") { toLocal(); return tkStore[op](a); } throw e; } };
+    tkStore = { add: tguard("add", (t) => tcol.doc().set(t)), remove: tguard("remove", (id) => tcol.doc(id).delete()) };
+    tunsub = tcol.onSnapshot((snap) => { rawTickets = snap.docs.map((d) => ({ id: d.id, ...d.data() })); render(); }, (err) => console.warn(err));
+    const icol = ledgerDoc.collection("items");
+    const iguard = (op, fn) => async (...a) => { try { return await fn(...a); } catch (e) { if (e && e.code === "invalid_argument") { toLocal(); return itStore[op](...a); } throw e; } };
+    itStore = { add: iguard("add", (t) => icol.doc().set(t)), update: iguard("update", (id, t) => icol.doc(id).set(t)), remove: iguard("remove", (id) => icol.doc(id).delete()) };
+    iunsub = icol.onSnapshot((snap) => { rawItems = snap.docs.map((d) => ({ id: d.id, ...d.data() })); render(); }, (err) => console.warn(err));
+    const toLocal = () => { if (unsub) unsub(); if (tunsub) tunsub(); if (iunsub) iunsub(); store = localStore(); tkStore = localTickets(); itStore = localItems(); setStatus("SAVED IN THIS BROWSER ONLY · VIEW-ONLY ACCESS", "warn"); };
+    const guard = (fn) => async (...a) => {
+      try { return await fn(...a); }
+      catch (e) { if (e && e.code === "invalid_argument") { toLocal(); return store[fn.op](...a); } throw e; }
+    };
+    const add = async (e) => { const ref = col.doc(); freshId = ref.id; await ref.set(e); }; add.op = "add";
+    const update = async (id, e) => { await col.doc(id).set(e); }; update.op = "update";
+    const remove = async (id) => { await col.doc(id).delete(); }; remove.op = "remove";
+    store = { add: guard(add), update: guard(update), remove: guard(remove) };
+    setStatus("YOUR PRIVATE LEDGER · SYNCED", "live");
+    unsub = col.onSnapshot((snap) => {
+      rawEntries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      render();
+    }, (err) => { setStatus("CONNECTION LOST · RELOAD TO RECONNECT", "warn"); console.warn(err); });
+  }
+
+  try { profiles = await lockStore.get(); } catch { profiles = localLock.getSync(); }
+  resumeSession();
+  applyGate();
+
+  if (db) watchMarket(db); else watchLivePrices();
+
+  const downloads = claude ? await claude.use("downloads").catch(() => null) : null;
+  if (!claude) setupStandaloneFiles();
+  if (downloads) {
+    $("exportBtn").hidden = false;
+    $("exportBtn").addEventListener("click", async () => {
+      const esc = (v) => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+      const lines = sorted().map((e) => csvRow(e).map(esc).join(","));
+      try { await downloads.save({ filename: "gold-ledger-" + today() + ".csv", data: [CSV_HEAD.join(","), ...lines].join("\n") }); }
+      catch (e) { if (e && e.code !== "declined") $("formMsg").textContent = "Export didn't go through. Try again in a moment."; }
+    });
+  }
+}
+
+// Standalone site: CSV export plus a backup file that moves the whole ledger to another device or browser.
+function saveFile(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function setupStandaloneFiles() {
+  const esc = (v) => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  $("exportBtn").hidden = false;
+  $("exportBtn").addEventListener("click", () => {
+    const lines = sorted().map((e) => csvRow(e).map(esc).join(","));
+    saveFile("gold-ledger-" + today() + ".csv", [CSV_HEAD.join(","), ...lines].join("\n"), "text/csv");
+  });
+  const tools = $("vaultTools");
+  const bk = el("button", "ghost", "Backup"); bk.type = "button"; bk.title = "Save everything to a file you can restore on another device";
+  bk.addEventListener("click", () => {
+    const data = { app: "gold-ledger", version: 1, savedAt: new Date().toISOString(), assays: rawEntries, tickets: rawTickets, items: rawItems, profiles: localLock.getSync() };
+    saveFile("gold-ledger-backup-" + today() + ".json", JSON.stringify(data), "application/json");
+    $("formMsg").textContent = "Backup saved. Keep that file somewhere safe.";
+  });
+  const rs = el("button", "ghost", "Restore"); rs.type = "button"; rs.title = "Load a backup file";
+  const pick = Object.assign(document.createElement("input"), { type: "file", accept: ".json,application/json", hidden: true });
+  rs.addEventListener("click", () => pick.click());
+  pick.addEventListener("change", async () => {
+    const f = pick.files[0]; pick.value = ""; if (!f) return;
+    try {
+      const d = JSON.parse(await f.text());
+      if (d.app !== "gold-ledger" || !Array.isArray(d.assays)) throw new Error("not a backup");
+      if (!confirm(`Replace what's on this device with the backup from ${new Date(d.savedAt).toLocaleString()}? It has ${d.assays.length} assays, ${(d.tickets || []).length} tickets and ${(d.items || []).length} items.`)) return;
+      lsSet("gl.assays", JSON.stringify(d.assays)); lsSet("gl.tickets", JSON.stringify(d.tickets || [])); lsSet("gl.items", JSON.stringify(d.items || []));
+      if (Array.isArray(d.profiles) && d.profiles.length) lsSet("gl.profiles", JSON.stringify(d.profiles));
+      location.reload();
+    } catch { $("formMsg").textContent = "That file isn't a Gold Ledger backup."; }
+  });
+  tools.append(bk, rs, pick);
+}
+
+$("calc").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const { x, r } = recalc();
+  if (!(x.weight > 0) || !(x.price > 0)) { $("formMsg").textContent = "Enter a weight and a " + METALS[metal].name.toLowerCase() + " price first."; return; }
+  if (!store) { $("formMsg").textContent = "Still connecting. Try again in a second."; return; }
+  const prev = editingId ? [...entries, ...inventory].find((e) => e.id === editingId) : null;
+  const entry = { ...x, perGram: r.perGram, total: r.total, profit: r.profit, createdAt: prev ? prev.createdAt : new Date().toISOString() };
+  if (prev && prev.unsold && unsoldSelling !== prev.id) entry.unsold = true;
+  const owner = prev ? prev.profile : cur;
+  if (owner) entry.profile = owner;
+  if (prev) entry.updatedAt = new Date().toISOString();
+  $("saveBtn").disabled = true;
+  try {
+    const label = entry.assay ? (entry.unsold ? "item " : "assay ") + entry.assay : (entry.unsold ? "unsold item" : "entry");
+    if (prev) {
+      await store.update(prev.id, entry); unsoldSelling = null;
+      $("formMsg").textContent = "Updated " + label + (entry.unsold ? " · kept out of your totals" : " · " + money(entry.profit) + " profit");
+      setEditing(null); clearForm();
+    } else {
+      await store.add(entry);
+      if (itemSelling) { const id = itemSelling; itemSelling = null; try { await itStore.remove(id); } catch {} }
+      $("formMsg").textContent = "Logged " + label + (entry.unsold ? " to Unsold · kept out of your totals" : " · " + money(entry.profit) + " profit");
+      for (const id of ["f-assay", "f-check"]) $(id).value = "";
+    }
+  } catch (e) {
+    $("formMsg").textContent = e && e.code === "quota_exceeded" ? "The vault is full. Delete some old entries to add new ones." : "Couldn't save that entry. Check your connection and try again.";
+  } finally { $("saveBtn").disabled = false; }
+});
+
+// ---------- rendering ----------
+const sorted = () => [...entries].sort((a, b) => (a.date + a.createdAt).localeCompare(b.date + b.createdAt));
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+function spec(label, value, cls) { const d = el("div"); d.append(el("span", "k", label), el("span", "v" + (cls ? " " + cls : ""), value)); return d; }
+
+function render() {
+  const mineAll = rawEntries.filter(mine);
+  entries = mineAll.filter((e) => !e.unsold);
+  inventory = mineAll.filter((e) => e.unsold);
+  items = rawItems.filter(mine);
+  renderInventory();
+  tickets = rawTickets.filter(mine);
+  renderTickets();
+  const all = sorted();
+  const t = all.reduce((s, e) => ({ profit: s.profit + e.profit, total: s.total + e.total, weight: s.weight + e.weight, sierra: s.sierra + e.sierra, princess: s.princess + e.princess }), { profit: 0, total: 0, weight: 0, sierra: 0, princess: 0 });
+  $("t-profit").textContent = money(t.profit);
+  $("t-profit").classList.toggle("neg", t.profit < 0);
+  $("t-total").textContent = money(t.total);
+  $("t-weight").textContent = t.weight.toFixed(2) + " g";
+  $("t-sierra").textContent = money(t.sierra);
+  $("t-princess").textContent = money(t.princess);
+  $("t-count").textContent = String(all.length);
+  drawSpark(all);
+
+  renderKarats(all);
+  renderCalendar();
+
+  const raw = $("filter").value.trim().toLowerCase();
+  const terms = raw.split(/\s+/).filter(Boolean);
+  // Assay # mode (or a query starting with #) matches assay numbers only, ignoring spaces, dashes and leading #.
+  const byAssay = searchMode === "assay" || raw.startsWith("#");
+  const norm = (v) => String(v || "").toLowerCase().replace(/[\s#\-_.]/g, "");
+  const aq = norm(raw);
+  const shown = (byAssay
+    ? all.filter((e) => aq && norm(e.assay).includes(aq)).sort((a, b) => (norm(b.assay) === aq) - (norm(a.assay) === aq))
+    : all.filter((e) => terms.every((t) => haystack(e).includes(t.replace(/^\$/, "")))).reverse());
+  const note = $("matchNote");
+  note.hidden = !terms.length;
+  if (terms.length) {
+    const p = shown.reduce((s, e) => s + e.profit, 0), w = shown.reduce((s, e) => s + e.weight, 0);
+    note.textContent = `${shown.length} match${shown.length === 1 ? "" : "es"} · ${w.toFixed(2)} g · ${money(p)} profit`;
+  }
+  const vault = $("vault");
+  vault.replaceChildren();
+  if (logsHidden) {
+    const d = el("div", "hiddenlogs");
+    d.innerHTML = EYE_OFF;
+    d.append(el("strong", null, all.length + " logs hidden"));
+    const b = el("button", "ghost", "Show logs"); b.type = "button"; b.addEventListener("click", () => setHidden(false));
+    d.append(b); vault.append(d); return;
+  }
+  if (!shown.length) {
+    const d = el("div", "empty");
+    d.append(el("div", "ghostbar"), el("strong", null, all.length ? "No matches" : "The vault is empty"),
+      el("span", null, all.length ? (byAssay ? "No assay number matches that." : "Nothing matches that search.") : "Fill in a new assay and press Log to vault. Each entry shows up here as a bar."));
+    vault.append(d); return;
+  }
+  for (const e of shown) vault.append(cardFor(e));
+  freshId = null;
+}
+function cardFor(e) {
+    const card = el("article", "ingot m-" + metalOf(e) + (e.unsold ? " unsold" : "") + (e.id === freshId ? " fresh" : "") + (e.id === editingId ? " editing" : ""));
+    const bar = el("div", "bar");
+    const sn = el("div", "sn");
+    sn.append(el("span", null, (e.unsold ? "Unsold · " : "Assay ") + (e.assay || "—")), el("span", null, fmtDate(e.date)));
+    const kt = el("span", "kt", metalOf(e) === "gold" ? (+e.karat).toString() + "K" : String(+e.karat));
+    if (metalOf(e) !== "gold") kt.append(el("small", null, METALS[metalOf(e)].name));
+    bar.append(kt, el("span", "wt", Number(e.weight).toFixed(2) + " g"), sn);
+    const specs = el("div", "specs");
+    specs.append(
+      spec(METALS[metalOf(e)].name + " price", money(e.price)), spec("Per gram", money(e.perGram)),
+      spec("Total", money(e.total)), spec("Check #", e.check || "—"),
+      spec("Sierra", money(e.sierra)), spec("Princess", money(e.princess)),
+    );
+    const foot = el("div", "foot");
+    const p = el("div");
+    if (e.unsold) { const v = estValue(e); p.append(el("span", "k", "Worth today"), el("div", "v", v != null ? money(v) : money(e.total))); }
+    else p.append(el("span", "k", "Profit"), el("div", "v " + (e.profit >= 0 ? "up" : "down"), money(e.profit)));
+    const confirming = pendingDelete === e.id;
+    const b = el("button", "del" + (confirming ? " confirm" : ""), confirming ? "Confirm delete" : "Delete");
+    b.type = "button";
+    b.setAttribute("aria-label", (confirming ? "Confirm delete " : "Delete ") + (e.assay ? "assay " + e.assay : "entry from " + e.date));
+    b.addEventListener("click", async () => {
+      if (pendingDelete !== e.id) { pendingDelete = e.id; render(); return; }
+      pendingDelete = null; b.disabled = true;
+      try { if (editingId === e.id) { setEditing(null); clearForm(); } await store.remove(e.id); } catch { $("formMsg").textContent = "Couldn't delete that entry. Try again."; render(); }
+    });
+    const ed = el("button", "edit", e.id === editingId ? "Editing" : "Edit");
+    ed.type = "button";
+    ed.setAttribute("aria-label", "Edit " + (e.assay ? "assay " + e.assay : "entry from " + e.date));
+    ed.addEventListener("click", () => startEdit(e));
+    const acts = el("div", "acts");
+    if (e.unsold) { const ms = el("button", "edit sellbtn", "Mark sold"); ms.type = "button"; ms.addEventListener("click", () => markSold(e)); acts.append(ms); }
+    acts.append(ed, b);
+    foot.append(p, acts);
+    card.append(bar, specs, foot);
+    return card;
+}
+$("filter").addEventListener("input", render);
+let searchMode = lsGet("gl.smode") === "assay" ? "assay" : "all";
+function setSearchMode(m) {
+  searchMode = m; lsSet("gl.smode", m);
+  $("smAll").setAttribute("aria-pressed", String(m === "all")); $("smAssay").setAttribute("aria-pressed", String(m === "assay"));
+  $("filter").placeholder = m === "assay" ? "Assay #: A-1042, 1042…" : "Search anything: 14K, 48.6, 1400, A-1042, 10/05";
+  $("filter").setAttribute("aria-label", m === "assay" ? "Search by assay number" : "Search logs");
+  render();
+}
+$("smAll").addEventListener("click", () => { setSearchMode("all"); $("filter").focus(); });
+$("smAssay").addEventListener("click", () => { setSearchMode("assay"); $("filter").focus(); });
+if (searchMode === "assay") { $("smAll").setAttribute("aria-pressed", "false"); $("smAssay").setAttribute("aria-pressed", "true"); $("filter").placeholder = "Assay #: A-1042, 1042…"; }
+
+// ---------- search: every field, every way it's shown ----------
+const kLabel = (k) => (+k).toString() + "K";
+const gradeLabel = (e) => (metalOf(e) === "gold" ? kLabel(e.karat) : (+e.karat) + " " + METALS[metalOf(e)].name);
+function haystack(e) {
+  const nums = [e.price, e.perGram, e.weight, e.total, e.sierra, e.princess, e.profit];
+  const parts = [e.assay, e.check, e.date, fmtDate(e.date), gradeLabel(e), String(e.karat), METALS[metalOf(e)].name];
+  if (metalOf(e) === "gold") parts.push("gold karat " + e.karat);
+  for (const n of nums) if (isFinite(n)) parts.push(String(n), n.toFixed(2), money(n), money(n).replace(/[$,]/g, ""));
+  if (e.date) { const [y, m, d] = e.date.split("-"); parts.push(`${+m}/${+d}`, `${m}/${d}`, `${+m}/${+d}/${y}`, MONTHS[+m - 1]); }
+  return parts.join(" | ").toLowerCase();
+}
+
+// ---------- hide logs ----------
+const EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+let logsHidden = lsGet("gl.hidden") === "1";
+function setHidden(h) {
+  logsHidden = h; lsSet("gl.hidden", h ? "1" : "0");
+  const b = $("eyeBtn");
+  b.innerHTML = h ? EYE_OFF : EYE_ON;
+  b.setAttribute("aria-pressed", String(h));
+  b.setAttribute("aria-label", h ? "Show logs" : "Hide logs"); b.title = h ? "Show logs" : "Hide logs";
+  render();
+}
+$("eyeBtn").addEventListener("click", () => setHidden(!logsHidden));
+
+// ---------- totals by karat ----------
+function renderKarats(all) {
+  const box = $("karatsum");
+  box.replaceChildren();
+  if (!all.length) { box.append(el("span", "match", "Karat totals appear once you log an assay.")); return; }
+  const g = new Map();
+  const order = { gold: 0, silver: 1, platinum: 2 };
+  for (const e of all) {
+    const k = Math.round(e.karat * 10) / 10, m = metalOf(e), key = m + ":" + k;
+    const t = g.get(key) || { n: 0, w: 0, total: 0, profit: 0, lbl: gradeLabel({ metal: m, karat: k }), o: order[m] * 1e4 + k };
+    t.n++; t.w += e.weight; t.total += e.total; t.profit += e.profit; g.set(key, t);
+  }
+  const active = $("filter").value.trim().toLowerCase();
+  for (const t of [...g.values()].sort((a, b) => a.o - b.o)) {
+    const b = el("button", "kchip"); b.type = "button";
+    const lbl = t.lbl;
+    b.setAttribute("aria-pressed", String(active === lbl.toLowerCase()));
+    b.title = "Show only " + lbl;
+    b.append(el("span", "kk", lbl), el("span", "kp " + (t.profit >= 0 ? "up" : "down"), money(t.profit) + " profit"),
+      el("span", "km", `${t.n} log${t.n === 1 ? "" : "s"} · ${t.w.toFixed(2)} g · ${money(t.total)} total`));
+    b.addEventListener("click", () => { $("filter").value = active === lbl.toLowerCase() ? "" : lbl; if (searchMode === "assay") setSearchMode("all"); else render(); });
+    box.append(b);
+  }
+}
+
+// ---------- tabs ----------
+function showTab(which) {
+  for (const t of ["vault", "inv", "cal", "calc"]) {
+    $("tab-" + t).setAttribute("aria-selected", String(t === which));
+    $("view-" + t).hidden = t !== which;
+  }
+  $("vaultTools").hidden = which !== "vault";
+  lsSet("gl.tab", which);
+}
+$("tab-vault").addEventListener("click", () => showTab("vault"));
+$("tab-cal").addEventListener("click", () => showTab("cal"));
+$("tab-calc").addEventListener("click", () => showTab("calc"));
+$("tab-inv").addEventListener("click", () => showTab("inv"));
+function setAskOpen(open) {
+  $("askPanel").hidden = !open; $("askFab").setAttribute("aria-expanded", String(open));
+  if (open) { $("chat").scrollTop = $("chat").scrollHeight; $("askBox").focus(); }
+}
+$("askFab").addEventListener("click", () => setAskOpen($("askPanel").hidden));
+$("askClose").addEventListener("click", () => { setAskOpen(false); $("askFab").focus(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("askPanel").hidden) setAskOpen(false); });
+
+// ---------- calculator ----------
+let cExpr = "", cLast = null, cJust = false;
+const cTape = [];
+function cEval(src) {
+  const t = src.replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").replace(/\s+/g, "");
+  let i = 0;
+  const peek = () => t[i];
+  function num() {
+    const m = /^(\d+\.?\d*|\.\d+)/.exec(t.slice(i));
+    if (!m) throw new Error("bad");
+    i += m[0].length; let v = parseFloat(m[0]);
+    while (peek() === "%") { i++; v /= 100; }
+    return v;
+  }
+  function atom() {
+    if (peek() === "-") { i++; return -atom(); }
+    if (peek() === "+") { i++; return atom(); }
+    if (peek() === "(") { i++; const v = sum(); if (peek() === ")") i++; let r = v; while (peek() === "%") { i++; r /= 100; } return r; }
+    return num();
+  }
+  function prod() { let v = atom(); while (peek() === "*" || peek() === "/") { const o = t[i++]; const r = atom(); v = o === "*" ? v * r : v / r; } return v; }
+  function sum() { let v = prod(); while (peek() === "+" || peek() === "-") { const o = t[i++]; const r = prod(); v = o === "+" ? v + r : v - r; } return v; }
+  if (!t) return 0;
+  const v = sum();
+  if (i < t.length || !isFinite(v)) throw new Error("bad");
+  return v;
+}
+const cFmt = (v) => String(Math.round(v * 1e8) / 1e8);
+const cPretty = (s) => s.replace(/\*/g, " × ").replace(/\//g, " ÷ ").replace(/(\d|\)|%)-/g, "$1 − ").replace(/(\d|\)|%)\+/g, "$1 + ");
+function cShow() {
+  $("cExpr").textContent = cPretty(cExpr);
+  const r = $("cRes"); r.classList.remove("err");
+  if (!cExpr) { r.textContent = cLast != null ? cFmt(cLast) : "0"; return; }
+  try { r.textContent = cFmt(cEval(cExpr)); } catch { r.textContent = cJust ? "Can't work that out" : "…"; if (cJust) r.classList.add("err"); }
+}
+function cInsert(v) {
+  if (cJust && /^[\d.(]/.test(v)) cExpr = "";
+  cJust = false;
+  if (/^[+\-*/]$/.test(v) && !cExpr && cLast != null) cExpr = cFmt(cLast);
+  cExpr += v; cShow();
+}
+function cEquals() {
+  if (!cExpr) return;
+  try {
+    const v = cEval(cExpr);
+    cTape.unshift({ e: cPretty(cExpr), v }); cTape.length = Math.min(cTape.length, 6);
+    cLast = v; cExpr = ""; cJust = true; cShow(); cRenderTape();
+  } catch { cJust = true; cShow(); cJust = false; }
+}
+function cCurrent() {
+  if (cExpr) { try { return cEval(cExpr); } catch { return null; } }
+  return cLast;
+}
+function cKey(c) {
+  if (c === "clear") { cExpr = ""; cLast = null; cJust = false; cShow(); return; }
+  if (c === "back") { cJust = false; cExpr = cExpr.slice(0, -1); cShow(); return; }
+  if (c === "=") return cEquals();
+  if (c === "neg") { const v = cCurrent(); if (v == null) return; cLast = -v; cExpr = ""; cJust = true; cShow(); return; }
+  cInsert(c);
+}
+function cRenderTape() {
+  const box = $("cTape"); box.replaceChildren();
+  for (const t of cTape) {
+    const b = el("button"); b.type = "button";
+    b.append(el("span", null, t.e + " ="), el("b", null, cFmt(t.v)));
+    b.addEventListener("click", () => cInsert(cFmt(t.v)));
+    box.append(b);
+  }
+}
+$("cKeys").addEventListener("click", (e) => { const b = e.target.closest("button[data-c]"); if (b) cKey(b.dataset.c); });
+document.addEventListener("keydown", (e) => {
+  if ($("view-calc").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  const k = e.key;
+  if (/^[\d.+\-*/()%]$/.test(k)) { e.preventDefault(); cKey(k); }
+  else if (k === "x" || k === "X") { e.preventDefault(); cKey("*"); }
+  else if (k === "Enter" || k === "=") { e.preventDefault(); cKey("="); }
+  else if (k === "Backspace") { e.preventDefault(); cKey("back"); }
+  else if (k === "Escape" || k === "Delete") { e.preventDefault(); cKey("clear"); }
+});
+$("cSend").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-f]"); if (!b) return;
+  const v = cCurrent();
+  if (v == null || !isFinite(v)) { $("cMsg").textContent = "Work out a number first."; return; }
+  const f = b.dataset.f, input = $(f);
+  input.value = String(Math.round(v * 100) / 100);
+  if (f === "f-pergram") perGramManual = true;
+  if (f === "f-karat") syncKaratButtons();
+  if (f === "f-price") lsSet(priceKey(metal), input.value);
+  recalc();
+  const label = b.textContent;
+  $("cMsg").textContent = `${input.value} put in ${label}.`;
+  $("formMsg").textContent = `${label} set from the calculator.`;
+});
+$("cQuick").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-q]"); if (!b) return;
+  const q = b.dataset.q; let v = null;
+  if (q === "today") v = market && market.price > 0 ? market.price : null;
+  else if (q === "ozt") v = G_PER_OZT;
+  else if (q === "dwt") v = 1.55517384;
+  else if (q === "pergram") v = num("f-pergram");
+  else if (q === "weight") v = num("f-weight");
+  else if (q === "total") v = recalc().r.total;
+  if (v == null || !(v > 0)) { $("cMsg").textContent = q === "today" ? "Today's price isn't loaded yet." : "That field is empty in New assay."; return; }
+  if (cExpr && /[\d.)%]$/.test(cExpr) && !cJust) cExpr += "*";
+  cInsert(cFmt(v));
+});
+
+// ---------- unsold items ----------
+function estValue(e) {
+  const mk = typeof markets !== "undefined" ? markets[metalOf(e)] : null;
+  if (!mk || !(mk.price > 0)) return null;
+  return e.weight * (mk.price / G_PER_OZT) * purityFor(metalOf(e), e.karat);
+}
+// Items: things bought but not sold, logged on their own (not assays).
+// Older entries logged as unsold assays still show here as cards.
+let iMetal = "gold", itemEditing = null, itemSelling = null, itemPendingDel = null;
+const itemWorth = (t) => { const mk = markets[metalOf(t)]; return mk && mk.price > 0 ? t.weight * (mk.price / G_PER_OZT) * purityFor(metalOf(t), t.karat) : null; };
+const itemGrade = (t) => (metalOf(t) === "gold" ? (+t.karat) + "K" : (+t.karat) + " " + METALS[metalOf(t)].name);
+function setItemMetal(m, keep) {
+  iMetal = METALS[m] ? m : "gold";
+  for (const b of $("iMetals").children) b.setAttribute("aria-pressed", String(b.dataset.m === iMetal));
+  const g = iMetal === "gold";
+  $("iKaratLabel").textContent = g ? "Karat" : "Fineness";
+  $("iKaratUnit").textContent = g ? "K" : "/1000";
+  $("i-karat").step = g ? "0.1" : "1";
+  $("iGrades").replaceChildren(...METALS[iMetal].grades.map((k) => Object.assign(document.createElement("option"), { value: k })));
+  if (!keep) $("i-karat").value = METALS[iMetal].def;
+}
+$("iMetals").addEventListener("click", (e) => { const b = e.target.closest("button[data-m]"); if (b) setItemMetal(b.dataset.m); });
+function clearItemForm() {
+  itemEditing = null; $("itemForm").classList.remove("editing");
+  $("itemTitle").textContent = "Log an item"; $("itemSave").textContent = "Log item"; $("itemReset").textContent = "Clear";
+  for (const id of ["i-name", "i-weight", "i-paid", "i-notes"]) $(id).value = "";
+  $("i-date").value = today(); setItemMetal(iMetal);
+}
+function editItem(t) {
+  itemEditing = t.id; $("itemForm").classList.add("editing");
+  $("itemTitle").textContent = "Edit item"; $("itemSave").textContent = "Save changes"; $("itemReset").textContent = "Cancel";
+  setItemMetal(metalOf(t), true);
+  $("i-name").value = t.name || ""; $("i-date").value = t.date || today(); $("i-karat").value = t.karat;
+  $("i-weight").value = t.weight || ""; $("i-paid").value = t.paid || ""; $("i-notes").value = t.notes || "";
+  $("itemMsg").textContent = "Editing " + (t.name || "item") + ". Save changes or Cancel.";
+  render(); $("itemForm").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("itemReset").addEventListener("click", () => { $("itemMsg").textContent = ""; clearItemForm(); render(); });
+$("itemForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const w = parseFloat($("i-weight").value), k = parseFloat($("i-karat").value);
+  if (!(w > 0)) { $("itemMsg").textContent = "Enter the item's weight first."; return; }
+  if (!(k > 0)) { $("itemMsg").textContent = "Enter a karat or fineness."; return; }
+  if (!itStore) { $("itemMsg").textContent = "Still connecting. Try again in a second."; return; }
+  const prev = itemEditing ? items.find((t) => t.id === itemEditing) : null;
+  const t = { name: $("i-name").value.trim(), date: $("i-date").value || today(), metal: iMetal, karat: k, weight: w,
+    paid: parseFloat($("i-paid").value) || 0, notes: $("i-notes").value.trim(), createdAt: prev ? prev.createdAt : new Date().toISOString() };
+  const owner = prev ? prev.profile : cur; if (owner) t.profile = owner;
+  $("itemSave").disabled = true;
+  try {
+    if (prev) { await itStore.update(prev.id, t); $("itemMsg").textContent = "Updated " + (t.name || "item") + "."; clearItemForm(); }
+    else { await itStore.add(t); $("itemMsg").textContent = "Logged " + (t.name || "item") + " · " + itemGrade(t) + " · " + w.toFixed(2) + " g"; for (const id of ["i-name", "i-weight", "i-paid", "i-notes"]) $(id).value = ""; }
+  } catch (e) { $("itemMsg").textContent = "Couldn't save that item. Check your connection and try again."; }
+  finally { $("itemSave").disabled = false; }
+});
+function itemCard(t) {
+  const c = el("article", "icard m-" + metalOf(t) + (t.id === itemEditing ? " editing" : ""));
+  const h = el("div", "ih"); h.append(el("span", "in", t.name || "Item"), el("span", "ig", itemGrade(t)));
+  const m = el("div", "im");
+  const add = (k, v) => { const sp = el("span", null, k + " "); sp.append(el("b", null, v)); m.append(sp); };
+  add("Weight", t.weight.toFixed(2) + " g"); add("Logged", fmtDate(t.date)); if (t.paid) add("Paid", money(t.paid));
+  c.append(h, m);
+  if (t.notes) c.append(el("div", "notes", t.notes));
+  const v = el("div", "iv"); const wv = itemWorth(t);
+  const left = el("div"); left.append(el("span", "k", "Worth today"), el("div", "v", wv != null ? money(wv) : "—"));
+  const acts = el("div", "acts");
+  const sell = el("button", "edit sellbtn", "Sold"); sell.type = "button"; sell.title = "Log it as a sold assay"; sell.addEventListener("click", () => sellItem(t));
+  const ed = el("button", "edit", t.id === itemEditing ? "Editing" : "Edit"); ed.type = "button"; ed.addEventListener("click", () => editItem(t));
+  const confirming = itemPendingDel === t.id;
+  const del = el("button", "del" + (confirming ? " confirm" : ""), confirming ? "Confirm" : "Remove"); del.type = "button";
+  del.addEventListener("click", async () => {
+    if (itemPendingDel !== t.id) { itemPendingDel = t.id; render(); return; }
+    itemPendingDel = null;
+    try { if (itemEditing === t.id) clearItemForm(); await itStore.remove(t.id); } catch { $("itemMsg").textContent = "Couldn't remove that item. Try again."; render(); }
+  });
+  acts.append(sell, ed, del); v.append(left, acts); c.append(v);
+  return c;
+}
+function sellItem(t) {
+  if (editingId) setEditing(null);
+  clearForm();
+  setMetal(metalOf(t));
+  $("f-karat").value = t.karat; $("f-weight").value = t.weight; $("f-assay").value = t.name || "";
+  syncKaratButtons(); recalc();
+  itemSelling = t.id;
+  $("formMsg").textContent = "Selling " + (t.name || "this item") + ". Fill in the price, Sierra and Princess, then Log to vault. It moves out of Items when you log it.";
+  $("formPanel").scrollIntoView({ behavior: "smooth", block: "start" }); $("f-assay").focus({ preventScroll: true });
+}
+function renderInventory() {
+  $("inv-count").textContent = String(items.length + inventory.length);
+  const list = [...items].sort((a, b) => (b.date + b.createdAt).localeCompare(a.date + a.createdAt));
+  const sum = $("invSum"); sum.replaceChildren();
+  const add = (k, v) => { const sp = el("span", null, k + " "); sp.append(el("b", null, v)); sum.append(sp); };
+  const all = [...list, ...inventory];
+  if (all.length) {
+    add("Items", String(all.length));
+    for (const m of Object.keys(METALS)) { const w = all.filter((e) => metalOf(e) === m).reduce((s, e) => s + e.weight, 0); if (w) add(METALS[m].name, w.toFixed(2) + " g"); }
+    const paid = list.reduce((s, t) => s + (t.paid || 0), 0); if (paid) add("Paid", money(paid));
+    add("Worth today", money(all.reduce((s, e) => s + ((e.unsold ? estValue(e) : itemWorth(e)) ?? (e.total || 0)), 0)));
+  }
+  const box = $("invList"); box.replaceChildren();
+  if (!all.length) {
+    const d = el("div", "empty");
+    d.append(el("div", "ghostbar"), el("strong", null, "No items yet"), el("span", null, "Log anything you're holding and haven't sold. It stays out of your totals."));
+    box.append(d); return;
+  }
+  for (const t of list) box.append(itemCard(t));
+  for (const e of inventory) box.append(cardFor(e));
+}
+function estValue(e) {
+  const mk = markets[metalOf(e)];
+  if (!mk || !(mk.price > 0)) return null;
+  return e.weight * (mk.price / G_PER_OZT) * purityFor(metalOf(e), e.karat);
+}
+function markSold(e) {
+  startEdit(e);
+  e = { ...e }; itemSelling = null;
+  $("f-date").value = today();
+  const mk = markets[metalOf(e)];
+  if (mk && mk.price > 0 && !e.perGramManual) { $("f-price").value = mk.price.toFixed(2); recalc(); }
+  unsoldSelling = e.id;
+  $("formMsg").textContent = "Selling " + (e.assay ? "item " + e.assay : "this item") + ". Check the price, date, Sierra and Princess, then press Save changes.";
+}
+let unsoldSelling = null;
+$("i-date").value = today(); setItemMetal("gold");
+
+// ---------- ask AI about the ledger ----------
+let askTurns = [], askCtl = null, askSample = null;
+function ledgerContext() {
+  const all = sorted();
+  const rows = all.slice(-400).map((e) => [e.date, METALS[metalOf(e)].name, gradeLabel(e), e.assay || "", e.check || "", +e.weight.toFixed(2), +e.price.toFixed(2), +e.perGram.toFixed(2), +e.total.toFixed(2), +e.sierra.toFixed(2), +e.princess.toFixed(2), +e.profit.toFixed(2)].join(","));
+  const tk = new Map();
+  for (const t of tickets) { const k = [t.date, TK_WHO[tkWho(t)], t.karat + "K"].join(","); tk.set(k, (tk.get(k) || 0) + 1); }
+  const tkRows = [...tk].sort((a, b) => a[0].localeCompare(b[0])).slice(-400).map(([k, n]) => k + "," + n);
+  const px = Object.keys(METALS).map((m) => markets[m] && markets[m].price > 0 ? `${METALS[m].name} $${markets[m].price}/ozt (Kitco bid, as of ${markets[m].asOf || "?"})` : null).filter(Boolean).join("; ");
+  return [
+    "Today's date: " + today() + ".",
+    "Spot prices: " + (px || "not loaded") + ".",
+    "How the ledger computes: per gram = metal price / 31.1035 x purity (gold: hallmark fineness for whole karats like 14K = .585, else karat/24; silver and platinum: fineness/1000). Total = weight in grams x per gram. Profit = Total - Sierra scraped - Princess scraped (both dollar amounts). Per gram can also be typed in by hand.",
+    `Sold assays (${all.length} total${all.length > 400 ? ", latest 400 shown" : ""}) as CSV: date,metal,grade,assay#,check#,weight_g,price_per_ozt,per_gram,total,sierra,princess,profit`,
+    rows.join("\n") || "(none yet)",
+    `Unsold items (logged but not sold; NOT part of any profit or totals above) as CSV: date_logged,metal,grade,item,weight_g,est_value_today`,
+    [...items.map((t) => [t.date, METALS[metalOf(t)].name, itemGrade(t), (t.name || "") + (t.paid ? " (paid $" + t.paid + ")" : "") + (t.notes ? " - " + t.notes : ""), +t.weight.toFixed(2), +(itemWorth(t) ?? 0).toFixed(2)].join(",")),
+     ...inventory.map((e) => [e.date, METALS[metalOf(e)].name, gradeLabel(e), e.assay || "", +e.weight.toFixed(2), +(estValue(e) ?? e.total).toFixed(2)].join(","))].join("\n") || "(none)",
+    `Tickets scraped (pawn/buy tickets used for gold), counted per day as CSV: date,who,karat,count (${tickets.length} tickets total)`,
+    tkRows.join("\n") || "(none yet)",
+  ].join("\n");
+}
+const ASK_RULES = "You are the assistant inside Gold Ledger, a private profit ledger for someone who buys and assays scrap gold, silver and platinum. Answer their question using ONLY the ledger data below; do the arithmetic carefully and show key numbers in dollars and grams. If the data can't answer it, say so plainly. You may also give practical guidance on reading their numbers or running the business, but never invent entries. Keep answers short and conversational, in plain text without Markdown tables or headings; short lists are fine.";
+function askBubble(cls, text) { const b = el("div", "bub " + cls, text); $("chat").append(b); $("chat").scrollTop = $("chat").scrollHeight; return b; }
+async function askSend(q) {
+  q = (q || "").trim(); if (!q || askCtl) return;
+  if (!askSample && window.claude) askSample = await window.claude.use("sample").catch(() => null);
+  if (!askSample) { $("askMsg").textContent = "The AI isn't available in this view."; return; }
+  $("askHint").hidden = true; $("askChips").hidden = true;
+  $("askBox").value = "";
+  askBubble("me", q);
+  askTurns.push({ role: "user", content: q });
+  askTurns = askTurns.slice(-12);
+  while (askTurns.length && askTurns[0].role !== "user") askTurns.shift();
+  const out = askBubble("ai wait", "Thinking…");
+  askCtl = new AbortController();
+  $("askSend").hidden = true; $("askStop").hidden = false; $("askMsg").textContent = "";
+  try {
+    const { text, truncated } = await askSample([{ role: "user", content: ASK_RULES + "\n\n" + ledgerContext() }, ...askTurns], {
+      cache: false, signal: askCtl.signal,
+      onText: ({ text }) => { out.className = "bub ai"; out.textContent = text; $("chat").scrollTop = $("chat").scrollHeight; },
+    });
+    out.className = "bub ai"; out.textContent = text;
+    askTurns.push({ role: "assistant", content: text });
+    if (truncated) $("askMsg").textContent = "That answer got cut short. Try asking for less at once.";
+  } catch (e) {
+    const code = e && e.code;
+    out.className = "bub ai"; out.textContent = (code !== "refused" && e && e.text) || "";
+    if (!out.textContent) out.remove();
+    askTurns.pop();
+    if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled") $("askMsg").textContent = "The AI needs your OK to run. Allow it from the artifact's Permissions menu, then reload.";
+    else if (code === "rate_limited") $("askMsg").textContent = "Too many questions too fast. Wait a bit, then ask again.";
+    else if (code === "session_expired") $("askMsg").textContent = "Sign in to Claude again to keep asking.";
+    else if (code === "refused") $("askMsg").textContent = "The AI couldn't answer that one. Try asking it differently.";
+    else if (code !== "cancelled") $("askMsg").textContent = "Something went wrong. Ask again in a moment.";
+  } finally {
+    askCtl = null; $("askSend").hidden = false; $("askStop").hidden = true;
+  }
+}
+$("askSend").addEventListener("click", () => askSend($("askBox").value));
+$("askStop").addEventListener("click", () => askCtl && askCtl.abort());
+$("askClear").addEventListener("click", () => {
+  if (askCtl) askCtl.abort();
+  askTurns = []; $("askMsg").textContent = "";
+  for (const b of [...$("chat").querySelectorAll(".bub")]) b.remove();
+  $("askHint").hidden = false; $("askChips").hidden = false; $("askBox").focus();
+});
+$("askBox").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askSend($("askBox").value); } });
+$("askChips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) askSend(b.textContent); });
+
+// ---------- tickets ----------
+const TK_KARATS = [10, 14, 18, 21, 22, 24];
+let tkScope = ["month", "year", "all"].includes(lsGet("gl.tkScope")) ? lsGet("gl.tkScope") : "month";
+function tkInScope(t) {
+  const d = today();
+  return tkScope === "all" || (t.date || "").startsWith(tkScope === "year" ? d.slice(0, 5) : d.slice(0, 8));
+}
+// Tickets counted before the Sierra/Princess split count as Sierra.
+const TK_WHO = { sierra: "Sierra", princess: "Princess" };
+const tkWho = (t) => (t.who === "princess" ? "princess" : "sierra");
+const tkDay = () => $("tkDate").value || today();
+$("tkDate").value = today();
+$("tkDate").addEventListener("change", () => { $("tkToday").hidden = tkDay() === today(); });
+$("tkToday").addEventListener("click", () => { $("tkDate").value = today(); $("tkToday").hidden = true; });
+let tkPendingDel = null;
+function renderTicketLog(list) {
+  const box = $("tkLog"); box.replaceChildren();
+  const days = new Map();
+  for (const t of list) { const d = t.date || "?"; (days.get(d) || days.set(d, []).get(d)).push(t); }
+  const keys = [...days.keys()].sort().reverse().slice(0, 14);
+  if (!keys.length) return;
+  box.append(el("span", "k", "Tickets by day"));
+  for (const d of keys) {
+    const ts = days.get(d).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    const sum = new Map();
+    for (const t of ts) { const lbl = (tkWho(t) === "princess" ? "P " : "S ") + t.karat + "K"; sum.set(lbl, (sum.get(lbl) || 0) + 1); }
+    const det = el("details");
+    if (ts.some((t) => t.id === tkPendingDel)) det.open = true;
+    const sm = el("summary");
+    sm.append(el("b", null, fmtDate(d) + " · " + ts.length + " ticket" + (ts.length === 1 ? "" : "s")), el("span", null, [...sum].map(([l, n]) => l + (n > 1 ? " ×" + n : "")).join(", ")));
+    const ul = el("ul");
+    for (const t of ts) {
+      const li = el("li");
+      const when = t.createdAt ? new Date(t.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+      li.append(el("span", null, TK_WHO[tkWho(t)] + " · " + t.karat + "K" + (when ? " · logged " + when : "")));
+      const confirming = tkPendingDel === t.id;
+      const b = el("button", "ghost" + (confirming ? " confirm" : ""), confirming ? "Confirm" : "Remove"); b.type = "button";
+      b.addEventListener("click", async () => {
+        if (tkPendingDel !== t.id) { tkPendingDel = t.id; renderTickets(); return; }
+        tkPendingDel = null;
+        try { await tkStore.remove(t.id); $("tkMsg").textContent = "Removed a " + t.karat + "K " + TK_WHO[tkWho(t)] + " ticket from " + fmtDate(d) + "."; }
+        catch { $("tkMsg").textContent = "Couldn't remove that ticket. Try again."; renderTickets(); }
+      });
+      li.append(b); ul.append(li);
+    }
+    det.append(sm, ul); box.append(det);
+  }
+}
+function renderTickets() {
+  for (const b of $("tkScope").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.s === tkScope));
+  const all = tickets.filter(tkInScope);
+  $("tkTotal").textContent = String(all.length);
+  renderTicketLog(all);
+  for (const who of Object.keys(TK_WHO)) {
+  const list = all.filter((t) => tkWho(t) === who);
+  $("tkTot-" + who).textContent = String(list.length);
+  const grid = $("tkGrid-" + who); grid.replaceChildren();
+  for (const k of TK_KARATS) {
+    const n = list.filter((t) => t.karat === k).length;
+    const w = el("div", "tk");
+    const add = el("button", "add"); add.type = "button"; add.dataset.k = k; add.dataset.who = who;
+    add.title = "Count one " + k + "K " + TK_WHO[who] + " ticket";
+    add.append(el("span", "kk", k + "K"), el("span", "c" + (n ? "" : " zero"), String(n)));
+    const undo = el("button", "undo ghost", "−"); undo.type = "button"; undo.dataset.k = k; undo.dataset.who = who;
+    undo.title = "Take back the last " + k + "K " + TK_WHO[who] + " ticket"; undo.setAttribute("aria-label", undo.title);
+    undo.disabled = !list.some((t) => t.karat === k);
+    w.append(add, undo); grid.append(w);
+  }
+  }
+}
+$("tkScope").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  tkScope = b.dataset.s; lsSet("gl.tkScope", tkScope); renderTickets();
+});
+$("tkGrid").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button"); if (!b) return;
+  if (!tkStore) { $("tkMsg").textContent = "Still connecting. Try again in a second."; return; }
+  const k = Number(b.dataset.k), who = b.dataset.who, name = TK_WHO[who];
+  try {
+    if (b.classList.contains("add")) {
+      const t = { karat: k, who, date: tkDay(), createdAt: new Date().toISOString() };
+      if (cur) t.profile = cur;
+      await tkStore.add(t);
+      $("tkMsg").textContent = "Counted a " + k + "K " + name + " ticket on " + fmtDate(tkDay()) + ".";
+      const nb = $("tkGrid").querySelector(`.add[data-k="${k}"][data-who="${who}"]`);
+      if (nb) { nb.classList.add("bump"); setTimeout(() => nb.classList.remove("bump"), 400); }
+    } else {
+      const last = tickets.filter((t) => t.karat === k && tkWho(t) === who && tkInScope(t)).sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")).pop();
+      if (!last) return;
+      await tkStore.remove(last.id);
+      $("tkMsg").textContent = "Took back a " + k + "K " + name + " ticket.";
+    }
+  } catch (e) {
+    $("tkMsg").textContent = "Couldn't save that ticket. Check your connection and try again.";
+  }
+});
+
+// ---------- calendar ----------
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const now = new Date();
+let calY = now.getFullYear(), calM = now.getMonth();
+const compact = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+const ymd = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+function byDay() {
+  const m = new Map();
+  for (const e of entries) { const t = m.get(e.date) || { profit: 0, n: 0 }; t.profit += e.profit; t.n++; m.set(e.date, t); }
+  return m;
+}
+// Exact karats (e.g. 14.6) count toward the nearest of these.
+const KW_KARATS = [10, 14, 18, 21, 22, 24];
+function renderKaratWeights(box, list, tks) {
+  const g = new Map(KW_KARATS.map((k) => [k, { w: 0, n: 0, t: 0, s: 0, p: 0 }]));
+  for (const t of tks) { const x = g.get(t.karat); if (x) { x.t++; if (tkWho(t) === "princess") x.p++; else x.s++; } }
+  const other = { silver: 0, platinum: 0 };
+  for (const e of list) {
+    if (metalOf(e) !== "gold") { other[metalOf(e)] += e.weight || 0; continue; }
+    const k = KW_KARATS.reduce((a, b) => (Math.abs(b - e.karat) < Math.abs(a - e.karat) ? b : a));
+    const t = g.get(k); t.w += e.weight || 0; t.n++;
+  }
+  box.replaceChildren();
+  for (const [k, t] of g) {
+    const c = el("div", "kwc" + (t.n || t.t ? " on" : ""));
+    c.append(el("span", "kk", k + "K"), el("span", "kg", t.w.toFixed(2) + " g"), el("span", "kn", t.n + " assay" + (t.n === 1 ? "" : "s")), el("span", "kn", t.t + " ticket" + (t.t === 1 ? "" : "s") + (t.t ? ` · S ${t.s} P ${t.p}` : "")));
+    box.append(c);
+  }
+  if (other.silver || other.platinum) {
+    const o = el("div", "kwother"); o.style.gridColumn = "1 / -1";
+    for (const m of ["silver", "platinum"]) if (other[m]) { const sp = el("span", null, METALS[m].name + " "); sp.append(el("b", null, other[m].toFixed(2) + " g")); o.append(sp); }
+    box.append(o);
+  }
+}
+function renderCalendar() {
+  const days = byDay();
+  const prefix = ymd(calY, calM, 1).slice(0, 8);
+  const monthEntries = entries.filter((e) => (e.date || "").startsWith(prefix));
+  const mp = monthEntries.reduce((s, e) => s + e.profit, 0);
+  $("calName").textContent = MONTHS[calM] + " " + calY;
+  $("calTotal").textContent = money(mp);
+  $("calTotal").classList.toggle("neg", mp < 0);
+  const mw = monthEntries.reduce((s, e) => s + e.weight, 0), mt = monthEntries.reduce((s, e) => s + e.total, 0);
+  const best = [...days.entries()].filter(([d]) => d.startsWith(prefix)).sort((a, b) => b[1].profit - a[1].profit)[0];
+  $("calStats").innerHTML = "";
+  for (const [k, v] of [["Assays", monthEntries.length], ["Weight", mw.toFixed(2) + " g"], ["Total", money(mt)], ["Best day", best ? fmtDate(best[0]) + " · " + money(best[1].profit) : "—"]]) {
+    const s = el("span", null, k + " "); s.append(el("b", null, String(v))); $("calStats").append(s);
+  }
+
+  $("kwMonthLabel").textContent = "Weight by karat · " + MONTHS[calM] + " " + calY;
+  renderKaratWeights($("kwMonth"), monthEntries, tickets.filter((t) => (t.date || "").startsWith(prefix)));
+  $("kwYearLabel").textContent = "Weight by karat · " + calY;
+  renderKaratWeights($("kwYear"), entries.filter((e) => (e.date || "").startsWith(calY + "-")), tickets.filter((t) => (t.date || "").startsWith(calY + "-")));
+
+  const cal = $("cal"); cal.replaceChildren();
+  for (const d of ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]) cal.append(el("div", "dow", d));
+  const first = new Date(calY, calM, 1).getDay(), dim = new Date(calY, calM + 1, 0).getDate();
+  const maxP = Math.max(1, ...[...days.entries()].filter(([d]) => d.startsWith(prefix)).map(([, t]) => Math.abs(t.profit)));
+  for (let i = 0; i < first; i++) cal.append(el("div", "day out"));
+  const todayStr = today();
+  for (let d = 1; d <= dim; d++) {
+    const key = ymd(calY, calM, d), t = days.get(key);
+    const c = el("div", "day" + (t ? " has" : "") + (key === todayStr ? " today" : ""));
+    c.append(el("span", "dn", String(d)));
+    const nt = tickets.filter((x) => x.date === key).length;
+    if (nt) c.append(el("span", "dt", nt + " ticket" + (nt === 1 ? "" : "s")));
+    if (t) {
+      c.style.setProperty("--heat", (0.35 + 0.65 * Math.abs(t.profit) / maxP).toFixed(2));
+      c.append(el("span", "dp " + (t.profit >= 0 ? "up" : "down"), Math.abs(t.profit) >= 10000 ? compact.format(t.profit) : money(t.profit).replace(/\.\d\d$/, "")),
+        el("span", "dc", t.n + " assay" + (t.n === 1 ? "" : "s")));
+      c.title = `${fmtDate(key)}: ${money(t.profit)} from ${t.n} assay${t.n === 1 ? "" : "s"}. Click to see them.`;
+      c.tabIndex = 0; c.setAttribute("role", "button");
+      const go = () => { $("filter").value = `${calM + 1}/${d}/${calY}`; showTab("vault"); if (searchMode === "assay") setSearchMode("all"); else render(); };
+      c.addEventListener("click", go);
+      c.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
+    }
+    cal.append(c);
+  }
+
+  $("yearLabel").textContent = "Profit by month · " + calY;
+  const yr = $("year"); yr.replaceChildren();
+  const totals = MONTHS.map((_, m) => entries.filter((e) => (e.date || "").startsWith(ymd(calY, m, 1).slice(0, 8))).reduce((s, e) => s + e.profit, 0));
+  const ymax = Math.max(1, ...totals.map(Math.abs));
+  totals.forEach((v, m) => {
+    const b = el("button", "ym" + (v > 0 ? " pos" : v < 0 ? " negm" : "")); b.type = "button";
+    b.setAttribute("aria-current", String(m === calM));
+    b.title = `${MONTHS[m]} ${calY}: ${money(v)}`;
+    const col = el("div", "col"); col.style.height = Math.max(3, Math.abs(v) / ymax * 64).toFixed(1) + "px";
+    b.append(col, el("span", "yl", MONTHS[m].slice(0, 3)));
+    b.addEventListener("click", () => { calM = m; renderCalendar(); });
+    yr.append(b);
+  });
+}
+$("calPrev").addEventListener("click", () => { if (--calM < 0) { calM = 11; calY--; } renderCalendar(); });
+$("calNext").addEventListener("click", () => { if (++calM > 11) { calM = 0; calY++; } renderCalendar(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pendingDelete) { pendingDelete = null; render(); } });
+
+function drawSpark(all) {
+  const svg = $("spark"), W = 150, H = 52, pad = 5;
+  const grad = '<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2c45a" stop-opacity=".45"/><stop offset="1" stop-color="#f2c45a" stop-opacity="0"/></linearGradient></defs>';
+  if (all.length < 2) { svg.innerHTML = `<line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" stroke="rgba(148,170,200,.3)" stroke-dasharray="3 4"/>`; return; }
+  let run = 0; const pts = all.map((e) => (run += e.profit));
+  const min = Math.min(0, ...pts), max = Math.max(0, ...pts), span = max - min || 1;
+  const xs = (i) => (i / (pts.length - 1)) * (W - 4);
+  const ys = (v) => H - pad - ((v - min) / span) * (H - pad * 2);
+  const line = pts.map((v, i) => (i ? "L" : "M") + xs(i).toFixed(1) + " " + ys(v).toFixed(1)).join(" ");
+  const area = line + ` L${xs(pts.length - 1)} ${ys(0).toFixed(1)} L0 ${ys(0).toFixed(1)} Z`;
+  svg.innerHTML = grad +
+    `<path d="${area}" fill="url(#sg)"/>` +
+    `<path d="${line}" fill="none" stroke="#f2c45a" stroke-width="1.6" vector-effect="non-scaling-stroke"/>` +
+    `<circle cx="${xs(pts.length - 1)}" cy="${ys(pts[pts.length - 1])}" r="2.6" fill="#fff1c4"/>`;
+}
+
+// ---------- today's price (kept current by a daily update into market/gold) ----------
+// Spot prices live in market/gold, market/silver and market/platinum; the card shows the metal picked in New assay.
+const markets = { gold: null, silver: null, platinum: null };
+let market = null, marketsLive = false;
+const marketFor = (m) => markets[m] || null;
+// Standalone site: live spot prices from gold-api.com (free, no key, browser-friendly).
+const LIVE_SYM = { gold: "XAU", silver: "XAG", platinum: "XPT" };
+async function pullLive(m) {
+  try {
+    const r = await fetch("https://api.gold-api.com/price/" + LIVE_SYM[m], { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if (!(j.price > 0)) throw new Error("no price");
+    markets[m] = { price: j.price, asOf: new Date().toISOString(), quoteAt: j.updatedAt, source: "Live spot" };
+    liveFails = 0;
+  } catch { liveFails++; }
+  if (m === metal) renderMarket();
+  renderInventory();
+}
+let liveFails = 0;
+function watchLivePrices() {
+  marketsLive = true;
+  for (const m of Object.keys(LIVE_SYM)) pullLive(m);
+  // The metal on screen refreshes every few seconds; the others every minute.
+  setInterval(() => { if (!document.hidden) pullLive(metal); }, 5000);
+  setInterval(() => { if (!document.hidden) for (const m of Object.keys(LIVE_SYM)) if (m !== metal) pullLive(m); }, 60000);
+}
+function marketUnavailable() { $("tpState").textContent = "Offline"; $("tpAsof").textContent = "Sign in to Claude to see today's price."; }
+function watchMarket(db) {
+  marketsLive = true;
+  for (const m of Object.keys(markets)) {
+    db.doc("market/" + m).onSnapshot((d) => {
+      markets[m] = d.exists ? d.data() : null;
+      if (m === metal) renderMarket();
+      renderInventory();
+    }, () => { if (m === metal) $("tpState").textContent = "Offline"; });
+  }
+}
+function renderMarket() {
+  if (!marketsLive) return;
+  market = marketFor(metal);
+  $("todayTitle").textContent = "Today's " + METALS[metal].name.toLowerCase();
+  $("tpUse").hidden = true;
+  if (!market || !(market.price > 0)) {
+    $("tpDot").className = "dot"; $("tpState").textContent = "No price yet";
+    $("tpPrice").innerHTML = "—<small>/ozt</small>";
+    $("tpGrams").replaceChildren(el("span", null, METALS[metal].name + " spot price in US dollars"));
+    $("tpAsof").textContent = "Today's " + METALS[metal].name.toLowerCase() + " price hasn't been posted yet.";
+    return;
+  }
+  const p = market.price, g = p / G_PER_OZT;
+  const stale = market.asOf && (Date.now() - Date.parse(market.asOf)) > 4 * 864e5;
+  $("tpDot").className = "dot " + (stale ? "warn" : "live");
+  $("tpState").textContent = stale ? "Last known" : market.source === "Live spot" ? (liveFails > 2 ? "Reconnecting" : "Live") : "Spot";
+  $("tpPrice").innerHTML = ""; $("tpPrice").append(document.createTextNode(money(p)), Object.assign(document.createElement("small"), { textContent: "/ozt" }));
+  const k = num("f-karat") || METALS[metal].def;
+  $("tpGrams").replaceChildren();
+  const rows = metal === "gold" ? [["24K", g * purityOf(24)], [kLabel(k), g * purityOf(k)], ["Pure", g]] : [[String(k), g * k / 1000], ["Pure", g]];
+  for (const [lbl, v] of rows) {
+    const sp = el("span", null, lbl + " "); sp.append(el("b", null, money(v) + "/g")); $("tpGrams").append(sp);
+  }
+  const when = market.asOf ? new Date(market.asOf).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  $("tpAsof").textContent = (when ? "As of " + when : "") + (market.source ? " · " + market.source : "");
+  $("tpUse").hidden = false;
+  if (!lsGet(priceKey(metal)) && !editingId && !$("f-price").dataset.touched) { $("f-price").value = p.toFixed(2); recalc(); }
+}
+$("tpUse").addEventListener("click", () => { if (market) { $("f-price").value = market.price.toFixed(2); lsSet(priceKey(metal), $("f-price").value); recalc(); $("formMsg").textContent = METALS[metal].name + " price set to today's price."; } });
+$("f-price").addEventListener("input", () => { $("f-price").dataset.touched = "1"; });
+$("f-karat").addEventListener("input", () => { if (market) renderMarket(); });
+$("karats").addEventListener("click", () => { if (market) renderMarket(); });
+
+// ---------- passwords: each password opens its own ledger ----------
+const LOCK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const ssSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch {} };
+const ssDel = (k) => { try { sessionStorage.removeItem(k); } catch {} };
+// Older versions stored a single `lock`; it becomes the first password.
+const normProfiles = (d) => Array.isArray(d && d.profiles) ? d.profiles : (d && d.lock ? [{ id: "p0", ...d.lock }] : []);
+const localLock = {
+  getSync() { try { return normProfiles({ profiles: JSON.parse(lsGet("gl.profiles") || "null") || undefined, lock: JSON.parse(lsGet("gl.lock") || "null") }); } catch { return []; } },
+  async get() { return this.getSync(); },
+  async set(list) { lsSet("gl.profiles", JSON.stringify(list)); },
+};
+let lockStore = localLock, profiles = [], cur = null, gateMode = "loading", gateBack = "open";
+// Logs saved before the first password was created belong to the first password.
+function mine(e) {
+  if (!profiles.length) return true;
+  return e.profile ? e.profile === cur : cur === profiles[0].id;
+}
+const b64 = (u8) => btoa(String.fromCharCode(...u8));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function hashPw(pw, salt) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: unb64(salt), iterations: 150000, hash: "SHA-256" }, key, 256);
+  return b64(new Uint8Array(bits));
+}
+async function makeSecret(pw) { const salt = b64(crypto.getRandomValues(new Uint8Array(16))); return { salt, hash: await hashPw(pw, salt) }; }
+async function findProfile(pw) { for (const p of profiles) if ((await hashPw(pw, p.salt)) === p.hash) return p; return null; }
+function openAs(p) { cur = p ? p.id : null; if (p) ssSet("gl.session", JSON.stringify({ id: p.id, hash: p.hash })); else ssDel("gl.session"); gateMode = "open"; }
+function resumeSession() {
+  if (!profiles.length) { cur = null; gateMode = lsGet("gl.skipPw") === "1" ? "open" : "create"; return; }
+  let s = null; try { s = JSON.parse(ssGet("gl.session") || "null"); } catch {}
+  const p = s && profiles.find((x) => x.id === s.id && x.hash === s.hash);
+  if (p) openAs(p); else { cur = null; gateMode = "locked"; }
+}
+async function saveProfiles(list) { await lockStore.set(list); profiles = list; }
+
+function applyGate() {
+  const open = gateMode === "open";
+  $("app").dataset.gate = open ? "open" : gateMode;
+  $("lockbar").hidden = !open;
+  $("lockBtn").innerHTML = LOCK_SVG + (cur ? "Lock" : "Create password");
+  $("pwBtn").hidden = !cur;
+  render();
+  renderGate();
+}
+function go(mode, back) { gateBack = back || (gateMode === "open" ? "open" : gateMode); gateMode = mode; applyGate(); }
+function gateField(id, label, auto) {
+  const f = el("div", "field");
+  const l = el("label", null, label); l.htmlFor = id;
+  const i = document.createElement("input"); i.type = "password"; i.id = id; i.autocomplete = auto;
+  f.append(l, i); return f;
+}
+function renderGate() {
+  const card = $("gateCard"); card.replaceChildren();
+  if (gateMode === "open") return;
+  const icon = el("div", "icon"); icon.innerHTML = LOCK_SVG;
+  const err = el("div", "err"); err.id = "gateErr";
+  const btns = el("div", "row2");
+  const primary = el("button", "cta"); primary.type = "submit";
+  const back = el("button", "ghost", "Back"); back.type = "button";
+  back.addEventListener("click", () => { gateMode = gateBack; applyGate(); });
+  const p = (t, small) => { const n = el("p", null, t); if (small) n.style.fontSize = "12px"; return n; };
+  if (gateMode === "loading") {
+    card.append(icon, el("h2", null, "Opening your ledger…"), p("Checking for your password."));
+    return;
+  }
+  if (gateMode === "locked") {
+    primary.textContent = "Unlock";
+    const create = el("button", "ghost", "Create password"); create.type = "button";
+    create.addEventListener("click", () => go("new", "locked"));
+    btns.append(primary, create);
+    const forgot = el("button", "linkbtn", "Forgot password?"); forgot.type = "button";
+    forgot.addEventListener("click", () => go("forgot", "locked"));
+    card.append(icon, el("h2", null, "Enter your password"), p("Type your password to open your logs. New here? Create a password to start your own ledger."),
+      gateField("g-pw", "Password", "current-password"), err, btns, forgot);
+  } else if (gateMode === "create" || gateMode === "new") {
+    const first = gateMode === "create";
+    primary.textContent = "Create password";
+    if (first) {
+      const skip = el("button", "ghost", "Skip for now"); skip.type = "button";
+      skip.addEventListener("click", () => { lsSet("gl.skipPw", "1"); openAs(null); applyGate(); });
+      btns.append(primary, skip);
+    } else btns.append(primary, back);
+    const intro = first ? "Welcome to Gold Ledger. Create a password so only you can open your logs."
+      : profiles.length ? "This starts a new, empty ledger that only this password opens." : "Your logs will stay hidden until this password is entered.";
+    card.append(icon, el("h2", null, first ? "Create your password" : "Create a password"), p(intro + " Write it down: it can't be recovered."),
+      gateField("g-new", "New password", "new-password"), gateField("g-confirm", "Confirm password", "new-password"), err, btns);
+    if (first) card.append(p("You can create one later with the Create password button under the title.", true));
+  } else if (gateMode === "change") {
+    primary.textContent = "Save";
+    btns.append(primary);
+    if (profiles.length === 1) {
+      const remove = el("button", "ghost", "Remove password"); remove.type = "button";
+      remove.addEventListener("click", async () => {
+        const me = profiles.find((x) => x.id === cur);
+        if (!me || (await hashPw($("g-cur").value, me.salt)) !== me.hash) { $("gateErr").textContent = "Current password is wrong."; return; }
+        try { await saveProfiles([]); openAs(null); applyGate(); $("formMsg").textContent = "Password removed."; }
+        catch { $("gateErr").textContent = "Couldn't save that. Check your connection and try again."; }
+      });
+      btns.append(remove);
+    }
+    btns.append(back);
+    card.append(icon, el("h2", null, "Change password"), gateField("g-cur", "Current password", "current-password"),
+      gateField("g-new", "New password", "new-password"), gateField("g-confirm", "Confirm new password", "new-password"), err, btns);
+  } else if (gateMode === "forgot") {
+    primary.textContent = "Create a new password";
+    btns.append(primary, back);
+    card.append(icon, el("h2", null, "Forgot your password?"),
+      p("Passwords can't be recovered, and nobody can see the logs behind them. You can create a new password to start a fresh ledger."), err, btns);
+  }
+  setTimeout(() => { const f = card.querySelector("input"); if (f) f.focus(); }, 0);
+}
+$("gateCard").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("gateErr"), btn = $("gateCard").querySelector("button[type=submit]");
+  if (gateMode === "forgot") { go("new", "locked"); return; }
+  btn.disabled = true;
+  try {
+    if (gateMode === "locked") {
+      const p = await findProfile($("g-pw").value);
+      if (p) { openAs(p); applyGate(); }
+      else { err.textContent = "That password isn't right."; $("g-pw").select(); }
+    } else if (gateMode === "create" || gateMode === "new" || gateMode === "change") {
+      const pw = $("g-new").value;
+      const me = profiles.find((x) => x.id === cur);
+      if (gateMode === "change" && (!me || (await hashPw($("g-cur").value, me.salt)) !== me.hash)) { err.textContent = "Current password is wrong."; return; }
+      if (pw.length < 4) { err.textContent = "Use at least 4 characters."; return; }
+      if (pw !== $("g-confirm").value) { err.textContent = "The two passwords don't match."; return; }
+      const taken = await findProfile(pw);
+      if (taken && !(gateMode === "change" && taken.id === cur)) { err.textContent = "That password is already used for another ledger. Pick a different one."; return; }
+      const secret = await makeSecret(pw);
+      if (gateMode === "change") {
+        const list = profiles.map((x) => x.id === cur ? { ...x, ...secret } : x);
+        await saveProfiles(list); openAs(list.find((x) => x.id === cur)); applyGate();
+        $("formMsg").textContent = "Password changed.";
+      } else {
+        const np = { id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...secret, createdAt: new Date().toISOString() };
+        await saveProfiles([...profiles, np]); openAs(np); applyGate();
+        $("formMsg").textContent = "Password created. Use Lock when you're done to hide your logs.";
+      }
+    }
+  } catch (e) {
+    err.textContent = "Couldn't save that. Check your connection and try again.";
+  } finally { if (btn.isConnected) btn.disabled = false; }
+});
+$("lockBtn").addEventListener("click", () => {
+  if (cur) { if (editingId) { setEditing(null); clearForm(); } ssDel("gl.session"); cur = null; gateMode = "locked"; applyGate(); }
+  else go("new", "open");
+});
+$("pwBtn").addEventListener("click", () => go("change", "open"));
+
+applyGate();
+setHidden(logsHidden);
+showTab(["inv", "cal", "calc"].includes(lsGet("gl.tab")) ? lsGet("gl.tab") : "vault");
+if (!window.claude) document.documentElement.classList.add("no-ai");
+init();
+</script>
+</body>
+</html>
