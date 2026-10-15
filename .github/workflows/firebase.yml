@@ -17,6 +17,9 @@ jobs:
         if: steps.key.outputs.ok == '1'
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+          cleanup_credentials: true
       - name: Deploy
         if: steps.key.outputs.ok == '1'
         run: |
@@ -27,5 +30,7 @@ jobs:
           done
           [ -n "$SITE" ] || { echo "No site name available"; exit 1; }
           echo "Publishing to https://$SITE.web.app"
+          # Only the page itself goes online, never anything else in the workspace.
+          rm -rf public && mkdir public && cp index.html public/
           sed -i "s/\"site\": \"[^\"]*\"/\"site\": \"$SITE\"/" firebase.json
           $FB deploy --only hosting --non-interactive

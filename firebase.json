@@ -1,8 +1,20 @@
 {
   "hosting": {
     "site": "goldledger",
-    "public": ".",
-    "ignore": ["firebase.json", "README.md", ".nojekyll", "**/.*", ".github/**"],
-    "headers": [{ "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+    "public": "public",
+    "ignore": [
+      "**/.*"
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
   }
 }
