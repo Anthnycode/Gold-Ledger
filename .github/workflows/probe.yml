@@ -6,8 +6,9 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          for u in "https://api.metals.live/v1/spot/gold" "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT" "https://api.coinbase.com/v2/exchange-rates?currency=XAU" "https://api.coinbase.com/v2/prices/XAU-USD/spot" "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"; do
+      - shell: bash {0}
+        run: |
+          for u in "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT" "https://api.coinbase.com/v2/exchange-rates?currency=XAU" "https://api.coinbase.com/v2/prices/XAU-USD/spot" "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"; do
             echo "=== $u"
             curl -sS -m 15 -D - -o body -H "Origin: https://goldledger.web.app" "$u" | grep -iE "^HTTP|access-control-allow-origin|cache-control" || true
             head -c 250 body; echo
