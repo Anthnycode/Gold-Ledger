@@ -1375,7 +1375,7 @@ function ledgerContext() {
 const ASK_RULES = "You are the assistant inside Gold Ledger, a private profit ledger for someone who buys and assays scrap gold, silver and platinum. Answer their question using ONLY the ledger data below; do the arithmetic carefully and show key numbers in dollars and grams. If the data can't answer it, say so plainly. You may also give practical guidance on reading their numbers or running the business, but never invent entries. Keep answers short and conversational, in plain text without Markdown tables or headings; short lists are fine.";
 // Website version: the chat runs on Google's Gemini through the site's own Firebase project (free tier).
 const AI_SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
-const AI_MODELS = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+const AI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash"];
 let aiMods = null, aiModel = null;
 async function geminiSample(messages, { signal, onText } = {}) {
   const fail = (code, text) => Object.assign(new Error(code), { code, text });
@@ -1388,7 +1388,10 @@ async function geminiSample(messages, { signal, onText } = {}) {
   // The first message carries the rules and the ledger; the rest is the conversation.
   const [first, ...turns] = messages;
   const contents = turns.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-  for (const name of aiModel ? [aiModel] : AI_MODELS) {
+  // Use the model that worked last time first; if one is busy or retired, the next one answers.
+  const order = aiModel ? [aiModel, ...AI_MODELS.filter((n) => n !== aiModel)] : AI_MODELS;
+  let last = "error";
+  for (const name of order) {
     let text = "";
     try {
       const model = ai.getGenerativeModel(inst, { model: name, systemInstruction: first.content });
@@ -1402,13 +1405,13 @@ async function geminiSample(messages, { signal, onText } = {}) {
     } catch (e) {
       if (e.code === "cancelled") throw e;
       const msg = String(e && e.message || e);
-      if (/not found|is not supported|404/i.test(msg) && !aiModel) continue;   // try the next model name
+      if (text) throw fail("error", text);
       if (/403|PERMISSION_DENIED|API has not been used|SERVICE_DISABLED|api-not-enabled/i.test(msg)) throw fail("ai_off");
-      if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) throw fail("rate_limited", text);
-      throw fail("error", text);
+      last = /429|RESOURCE_EXHAUSTED|quota/i.test(msg) ? "rate_limited" : "error";
+      if (aiModel === name) aiModel = null;
     }
   }
-  throw fail("ai_off");
+  throw fail(last);
 }
 function askBubble(cls, text) { const b = el("div", "bub " + cls, text); $("chat").append(b); $("chat").scrollTop = $("chat").scrollHeight; return b; }
 async function askSend(q) {
