@@ -7,15 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          for u in "https://api.gold-api.com/price/XAU" "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" "https://data-asg.goldprice.org/dbXRates/USD"; do
+          for u in "https://api.metals.live/v1/spot/gold" "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT" "https://api.coinbase.com/v2/exchange-rates?currency=XAU" "https://api.coinbase.com/v2/prices/XAU-USD/spot" "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"; do
             echo "=== $u"
-            curl -sS -m 15 -D - -o body -H "Origin: https://goldledger.web.app" "$u" | grep -iE "^HTTP|access-control-allow-origin|cache-control|^age:" || true
-            head -c 400 body; echo
+            curl -sS -m 15 -D - -o body -H "Origin: https://goldledger.web.app" "$u" | grep -iE "^HTTP|access-control-allow-origin|cache-control" || true
+            head -c 250 body; echo
           done
-          echo "=== polling every 5s"
-          for i in $(seq 1 8); do
-            a=$(curl -s -m 10 https://api.gold-api.com/price/XAU | head -c 200)
-            s=$(curl -s -m 10 https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD | python3 -c "import json,sys; d=json.load(sys.stdin); p=d[0]['spreadProfilePrices'][0]; print(d[0]['ts'], p['bid'], p['ask'])" 2>&1 | head -c 200)
-            echo "$(date +%T) goldapi=$a | swissquote=$s"
-            sleep 5
-          done
+          echo "=== coinbase XAU polling"
+          for i in $(seq 1 6); do echo "$(date +%T) $(curl -s https://api.coinbase.com/v2/exchange-rates?currency=XAU | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["rates"]["USD"])' 2>&1 | head -c 80) | $(curl -s https://api.coinbase.com/v2/prices/XAU-USD/spot | head -c 120)"; sleep 5; done
