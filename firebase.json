@@ -1,0 +1,8 @@
+{
+  "hosting": {
+    "site": "gold-ledger",
+    "public": ".",
+    "ignore": ["firebase.json", "README.md", ".nojekyll", "**/.*", ".github/**"],
+    "headers": [{ "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+  }
+}
