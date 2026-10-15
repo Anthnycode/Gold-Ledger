@@ -72,6 +72,10 @@ body::before {
 .today .tp-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .today .live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
 .today .price { font-family: var(--display); font-weight: 700; font-size: 30px; letter-spacing: -0.02em; line-height: 1.05; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.today .price.tick-up { animation: tickUp 1.2s ease-out; }
+.today .price.tick-down { animation: tickDown 1.2s ease-out; }
+@keyframes tickUp { from { filter: drop-shadow(0 0 10px var(--up)); } to { filter: none; } }
+@keyframes tickDown { from { filter: drop-shadow(0 0 10px var(--down)); } to { filter: none; } }
 .today .price small { font-family: var(--mono); font-size: 12px; color: var(--dim); -webkit-text-fill-color: var(--dim); font-weight: 400; letter-spacing: 0; margin-left: 4px; }
 .today .grams { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 .today .grams b { color: var(--text); font-weight: 500; }
@@ -1631,17 +1635,33 @@ function drawSpark(all) {
 const markets = { gold: null, silver: null, platinum: null };
 let market = null, marketsLive = false;
 const marketFor = (m) => markets[m] || null;
-// Standalone site: live spot prices from gold-api.com (free, no key, browser-friendly).
+// Standalone site: live spot prices, checked every few seconds from two free feeds (Coinbase and
+// gold-api.com). Each feed ticks on its own schedule, so whichever one moved last sets the price.
 const LIVE_SYM = { gold: "XAU", silver: "XAG", platinum: "XPT" };
+const liveLast = {};   // "<metal>:<feed>" -> last price that feed reported
+async function feedPrice(m, feed) {
+  const url = feed === "cb" ? "https://api.coinbase.com/v2/prices/" + LIVE_SYM[m] + "-USD/spot" : "https://api.gold-api.com/price/" + LIVE_SYM[m];
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  const j = await r.json();
+  const p = feed === "cb" ? parseFloat(j.data && j.data.amount) : j.price;
+  if (!(p > 0)) throw new Error("no price");
+  return Math.round(p * 100) / 100;
+}
 async function pullLive(m) {
-  try {
-    const r = await fetch("https://api.gold-api.com/price/" + LIVE_SYM[m], { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status);
-    const j = await r.json();
-    if (!(j.price > 0)) throw new Error("no price");
-    markets[m] = { price: j.price, asOf: new Date().toISOString(), quoteAt: j.updatedAt, source: "Live spot" };
-    liveFails = 0;
-  } catch { liveFails++; }
+  const feeds = ["ga", "cb"], got = await Promise.allSettled(feeds.map((f) => feedPrice(m, f)));
+  let price = null;
+  feeds.forEach((f, i) => {
+    if (got[i].status !== "fulfilled") return;
+    const p = got[i].value, key = m + ":" + f;
+    if (liveLast[key] !== p || !markets[m]) price = p;
+    liveLast[key] = p;
+  });
+  const ok = got.some((g) => g.status === "fulfilled");
+  liveFails = ok ? 0 : liveFails + 1;
+  const now = new Date().toISOString(), prev = markets[m];
+  if (price !== null && (!prev || prev.price !== price)) markets[m] = { price, asOf: now, checkedAt: now, source: "Live spot", dir: prev ? Math.sign(price - prev.price) : 0 };
+  else if (ok && prev) markets[m] = { ...prev, checkedAt: now, dir: 0 };
   if (m === metal) renderMarket();
   renderInventory();
 }
@@ -1688,7 +1708,11 @@ function renderMarket() {
     const sp = el("span", null, lbl + " "); sp.append(el("b", null, money(v) + "/g")); $("tpGrams").append(sp);
   }
   const when = market.asOf ? new Date(market.asOf).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
-  $("tpAsof").textContent = (when ? "As of " + when : "") + (market.source ? " · " + market.source : "");
+  if (market.checkedAt) {
+    const t = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
+    $("tpAsof").textContent = "Price moved " + t(market.asOf) + " · checked " + t(market.checkedAt) + " · updates every 5s";
+  } else $("tpAsof").textContent = (when ? "As of " + when : "") + (market.source ? " · " + market.source : "");
+  if (market.dir) { const tp = $("tpPrice"); tp.classList.remove("tick-up", "tick-down"); void tp.offsetWidth; tp.classList.add(market.dir > 0 ? "tick-up" : "tick-down"); market.dir = 0; }
   $("tpUse").hidden = false;
   if (!lsGet(priceKey(metal)) && !editingId && !$("f-price").dataset.touched) { $("f-price").value = p.toFixed(2); recalc(); }
 }
