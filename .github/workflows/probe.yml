@@ -6,12 +6,22 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
       - shell: bash {0}
         run: |
-          for u in "https://api.binance.com/api/v3/ticker/price?symbol=PAXGUSDT" "https://api.coinbase.com/v2/exchange-rates?currency=XAU" "https://api.coinbase.com/v2/prices/XAU-USD/spot" "https://forex-data-feed.swissquote.com/public-quotes/bboquotes/instrument/XAU/USD" "https://api.kraken.com/0/public/Ticker?pair=PAXGUSD"; do
-            echo "=== $u"
-            curl -sS -m 15 -D - -o body -H "Origin: https://goldledger.web.app" "$u" | grep -iE "^HTTP|access-control-allow-origin|cache-control" || true
-            head -c 250 body; echo
-          done
-          echo "=== coinbase XAU polling"
-          for i in $(seq 1 6); do echo "$(date +%T) $(curl -s https://api.coinbase.com/v2/exchange-rates?currency=XAU | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["rates"]["USD"])' 2>&1 | head -c 80) | $(curl -s https://api.coinbase.com/v2/prices/XAU-USD/spot | head -c 120)"; sleep 5; done
+          npm i playwright@1.48.2 >/dev/null 2>&1 && npx playwright install --with-deps chromium >/dev/null 2>&1
+          cat > t.mjs <<'JS'
+          import { chromium } from 'playwright';
+          const b = await chromium.launch(); const p = await b.newPage();
+          p.on('console', m => console.log('console:', m.type(), m.text().slice(0, 300)));
+          await p.goto('https://goldledger.web.app/', { waitUntil: 'networkidle' });
+          console.log('fab exists:', await p.$('#askFab') !== null);
+          const r = await p.evaluate(async () => {
+            try { const x = await geminiSample([{ role: 'user', content: 'Answer in one short sentence.' }, { role: 'user', content: 'What is 2+2?' }]); return 'OK model=' + aiModel + ' text=' + x.text; }
+            catch (e) { return 'ERR ' + e.code + ' ' + String(e.message) + ' ' + (e.text || ''); }
+          });
+          console.log('RESULT', r);
+          await b.close();
+          JS
+          node t.mjs
