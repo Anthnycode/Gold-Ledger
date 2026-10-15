@@ -13,11 +13,17 @@ jobs:
       - name: Check for key
         id: key
         run: if [ -n "$KEY" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; else echo "No FIREBASE_SERVICE_ACCOUNT secret yet, skipping."; fi
+      - name: Check key format
+        if: steps.key.outputs.ok == '1'
+        run: |
+          printf '%s' "$KEY" | python3 -c "import json,sys; d=json.load(sys.stdin); print('type:', d.get('type'), '| project:', d.get('project_id'), '| has private key:', 'private_key' in d)"
+      - uses: google-github-actions/auth@v2
+        if: steps.key.outputs.ok == '1'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       - name: Deploy
         if: steps.key.outputs.ok == '1'
         run: |
-          printf '%s' "$KEY" > "$RUNNER_TEMP/sa.json"
-          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           npx -y firebase-tools@13 hosting:sites:get gold-ledger --project gold-ledger-96dee \
             || npx -y firebase-tools@13 hosting:sites:create gold-ledger --project gold-ledger-96dee
           npx -y firebase-tools@13 deploy --only hosting --project gold-ledger-96dee --non-interactive
