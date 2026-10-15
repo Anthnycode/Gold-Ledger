@@ -18,11 +18,10 @@ jobs:
           await p.goto('https://goldledger.web.app/', { waitUntil: 'networkidle' });
           console.log('fab exists:', await p.$('#askFab') !== null);
           const r = await p.evaluate(async () => {
-            try { await geminiSample([{ role: 'user', content: 'x' }, { role: 'user', content: 'hi' }]); } catch {}
             const out = [];
-            for (const name of ['gemini-3.6-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']) {
-              try { const m = aiMods.ai.getGenerativeModel(aiMods.inst, { model: name }); const res = await m.generateContent('What is 2+2? One short sentence.'); out.push(name + ' OK ' + res.response.text()); }
-              catch (e) { out.push(name + ' ERR ' + String(e.message).slice(0, 400)); }
+            for (const q of ['What is 2+2?', 'Name one gold karat.']) {
+              try { const x = await geminiSample([{ role: 'user', content: 'Answer in one short sentence.' }, { role: 'user', content: q }]); out.push('OK model=' + aiModel + ' text=' + x.text.trim()); }
+              catch (e) { out.push('ERR ' + e.code + ' ' + String(e.message)); }
             }
             return out.join('\n');
           });
