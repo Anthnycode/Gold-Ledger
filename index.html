@@ -98,7 +98,7 @@ h1 .au { background: var(--gold-metal); -webkit-background-clip: text; backgroun
 .k { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
 .stat .v { font-family: var(--mono); font-weight: 500; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .stat.hero { position: relative; grid-template-columns: minmax(0, 1fr) 120px; align-items: end; gap: 4px 16px; }
-.stat.hero .v { font-family: var(--display); font-weight: 700; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -0.02em; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; grid-column: 1; white-space: nowrap; overflow-wrap: normal; }
+.stat.hero .v { font-family: var(--display); font-weight: 700; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -0.02em; background: var(--gold-metal); -webkit-background-clip: text; background-clip: text; color: transparent; grid-column: 1; white-space: nowrap; overflow-wrap: normal; overflow: hidden; min-width: 0; }
 .stat.hero .v.neg { background: none; color: var(--down); }
 .stat.hero .k { grid-column: 1; }
 .spark { grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 52px; }
@@ -891,6 +891,14 @@ function setupStandaloneFiles() {
   });
 }
 
+// Shrink the big profit number until it fits beside the chart.
+function fitProfit() {
+  const v = $("t-profit"); v.style.fontSize = "";
+  if (!v.clientWidth) return;
+  let size = parseFloat(getComputedStyle(v).fontSize);
+  while (v.scrollWidth > v.clientWidth && size > 14) { size -= 1; v.style.fontSize = size + "px"; }
+}
+addEventListener("resize", () => fitProfit());
 $("calc").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const { x, r } = recalc();
@@ -937,6 +945,7 @@ function render() {
   const t = all.reduce((s, e) => ({ profit: s.profit + e.profit, total: s.total + e.total, weight: s.weight + e.weight, sierra: s.sierra + e.sierra, princess: s.princess + e.princess }), { profit: 0, total: 0, weight: 0, sierra: 0, princess: 0 });
   $("t-profit").textContent = money(t.profit);
   $("t-profit").classList.toggle("neg", t.profit < 0);
+  fitProfit();
   $("t-total").textContent = money(t.total);
   $("t-weight").textContent = t.weight.toFixed(2) + " g";
   $("t-sierra").textContent = money(t.sierra);
