@@ -1373,10 +1373,48 @@ function ledgerContext() {
   ].join("\n");
 }
 const ASK_RULES = "You are the assistant inside Gold Ledger, a private profit ledger for someone who buys and assays scrap gold, silver and platinum. Answer their question using ONLY the ledger data below; do the arithmetic carefully and show key numbers in dollars and grams. If the data can't answer it, say so plainly. You may also give practical guidance on reading their numbers or running the business, but never invent entries. Keep answers short and conversational, in plain text without Markdown tables or headings; short lists are fine.";
+// Website version: the chat runs on Google's Gemini through the site's own Firebase project (free tier).
+const AI_SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
+const AI_MODELS = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+let aiMods = null, aiModel = null;
+async function geminiSample(messages, { signal, onText } = {}) {
+  const fail = (code, text) => Object.assign(new Error(code), { code, text });
+  if (!aiMods) {
+    const [app, ai] = await Promise.all([import(AI_SDK + "firebase-app.js"), import(AI_SDK + "firebase-ai.js")]);
+    const fa = app.getApps().find((a) => a.name === "ai") || app.initializeApp(CLOUD_CONFIG, "ai");
+    aiMods = { ai, inst: ai.getAI(fa, { backend: new ai.GoogleAIBackend() }) };
+  }
+  const { ai, inst } = aiMods;
+  // The first message carries the rules and the ledger; the rest is the conversation.
+  const [first, ...turns] = messages;
+  const contents = turns.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+  for (const name of aiModel ? [aiModel] : AI_MODELS) {
+    let text = "";
+    try {
+      const model = ai.getGenerativeModel(inst, { model: name, systemInstruction: first.content });
+      const res = await model.generateContentStream({ contents });
+      for await (const chunk of res.stream) {
+        if (signal && signal.aborted) throw fail("cancelled", text);
+        text += chunk.text(); if (onText) onText({ text });
+      }
+      aiModel = name;
+      return { text, truncated: false };
+    } catch (e) {
+      if (e.code === "cancelled") throw e;
+      const msg = String(e && e.message || e);
+      if (/not found|is not supported|404/i.test(msg) && !aiModel) continue;   // try the next model name
+      if (/403|PERMISSION_DENIED|API has not been used|SERVICE_DISABLED|api-not-enabled/i.test(msg)) throw fail("ai_off");
+      if (/429|RESOURCE_EXHAUSTED|quota/i.test(msg)) throw fail("rate_limited", text);
+      throw fail("error", text);
+    }
+  }
+  throw fail("ai_off");
+}
 function askBubble(cls, text) { const b = el("div", "bub " + cls, text); $("chat").append(b); $("chat").scrollTop = $("chat").scrollHeight; return b; }
 async function askSend(q) {
   q = (q || "").trim(); if (!q || askCtl) return;
   if (!askSample && window.claude) askSample = await window.claude.use("sample").catch(() => null);
+  if (!askSample && !window.claude && CLOUD_CONFIG) askSample = geminiSample;
   if (!askSample) { $("askMsg").textContent = "The AI isn't available in this view."; return; }
   $("askHint").hidden = true; $("askChips").hidden = true;
   $("askBox").value = "";
@@ -1400,7 +1438,8 @@ async function askSend(q) {
     out.className = "bub ai"; out.textContent = (code !== "refused" && e && e.text) || "";
     if (!out.textContent) out.remove();
     askTurns.pop();
-    if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled") $("askMsg").textContent = "The AI needs your OK to run. Allow it from the artifact's Permissions menu, then reload.";
+    if (code === "ai_off") $("askMsg").textContent = "The AI chat isn't switched on yet for this site. Ask Claude to finish setting it up.";
+    else if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled") $("askMsg").textContent = "The AI needs your OK to run. Allow it from the artifact's Permissions menu, then reload.";
     else if (code === "rate_limited") $("askMsg").textContent = "Too many questions too fast. Wait a bit, then ask again.";
     else if (code === "session_expired") $("askMsg").textContent = "Sign in to Claude again to keep asking.";
     else if (code === "refused") $("askMsg").textContent = "The AI couldn't answer that one. Try asking it differently.";
@@ -2100,7 +2139,7 @@ $("lockBtn").addEventListener("click", (ev) => {
 }, true);
 if (CLOUD_CONFIG) document.documentElement.classList.add("cloud");
 
-if (!window.claude) document.documentElement.classList.add("no-ai");
+if (!window.claude && !CLOUD_CONFIG) document.documentElement.classList.add("no-ai");
 init();
 </script>
 </body>
