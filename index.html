@@ -292,6 +292,8 @@ details pre { font-family: var(--mono); font-size: 11px; white-space: pre-wrap; 
 .invsum { display: flex; flex-wrap: wrap; gap: 6px 18px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 .invsum b { color: var(--text); font-weight: 500; }
 .invnote { font-size: 12px; color: var(--dim); }
+.restorebox { display: grid; gap: 6px; justify-items: start; margin-top: 6px; padding: 12px; border: 1px dashed var(--edge-hi); border-radius: 10px; font-size: 13px; }
+.restorebox span { color: var(--dim); font-size: 12px; line-height: 1.4; }
 /* ask: floating chat */
 .fab { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 56px; height: 56px; padding: 0; border-radius: 50%; border: none; background: var(--gold-metal); color: #1a1205; display: grid; place-items: center; box-shadow: 0 8px 28px rgba(242,196,90,.35), 0 2px 8px rgba(0,0,0,.5); }
 .fab svg { width: 26px; height: 26px; }
@@ -895,21 +897,28 @@ function setupStandaloneFiles() {
     $("formMsg").textContent = "Backup saved. Keep that file somewhere safe.";
   });
   const rs = el("button", "ghost", "Restore"); rs.type = "button"; rs.title = "Load a backup file";
-  const pick = Object.assign(document.createElement("input"), { type: "file", accept: ".json,application/json", hidden: true });
-  rs.addEventListener("click", () => pick.click());
-  pick.addEventListener("change", async () => {
-    const f = pick.files[0]; pick.value = ""; if (!f) return;
-    try {
-      const d = JSON.parse(await f.text());
-      if (d.app !== "gold-ledger" || !Array.isArray(d.assays)) throw new Error("not a backup");
-      if (!confirm(`Replace what's on this device with the backup from ${new Date(d.savedAt).toLocaleString()}? It has ${d.assays.length} assays, ${(d.tickets || []).length} tickets and ${(d.items || []).length} items.`)) return;
-      lsSet("gl.assays", JSON.stringify(d.assays)); lsSet("gl.tickets", JSON.stringify(d.tickets || [])); lsSet("gl.items", JSON.stringify(d.items || []));
-      if (Array.isArray(d.profiles) && d.profiles.length) lsSet("gl.profiles", JSON.stringify(d.profiles));
-      location.reload();
-    } catch { $("formMsg").textContent = "That file isn't a Gold Ledger backup."; }
-  });
-  tools.append(bk, rs, pick);
+  rs.addEventListener("click", restoreBackup);
+  tools.append(bk, rs);
 }
+// Restore replaces this device's ledger with a backup, passwords included, so old passwords open it here.
+const restorePick = Object.assign(document.createElement("input"), { type: "file", accept: ".json,application/json", hidden: true });
+document.body.append(restorePick);
+function restoreBackup() { restorePick.click(); }
+restorePick.addEventListener("change", async () => {
+  const f = restorePick.files[0]; restorePick.value = ""; if (!f) return;
+  const say = (t) => { const g = $("gateErr"); if (g && gateMode !== "open") g.textContent = t; else $("formMsg").textContent = t; };
+  try {
+    const d = JSON.parse(await f.text());
+    if (d.app !== "gold-ledger" || !Array.isArray(d.assays)) throw new Error("not a backup");
+    const np = Array.isArray(d.profiles) ? d.profiles.length : 0;
+    if (!confirm(`Load the backup from ${new Date(d.savedAt).toLocaleString()}? It has ${d.assays.length} assays, ${(d.tickets || []).length} tickets, ${(d.items || []).length} items` + (np ? ` and ${np} password${np === 1 ? "" : "s"}` : "") + ". It replaces what's on this device.")) return;
+    lsSet("gl.assays", JSON.stringify(d.assays)); lsSet("gl.tickets", JSON.stringify(d.tickets || [])); lsSet("gl.items", JSON.stringify(d.items || []));
+    lsSet("gl.profiles", JSON.stringify(np ? d.profiles : []));
+    try { localStorage.removeItem("gl.lock"); localStorage.removeItem("gl.skipPw"); } catch {}
+    ssDel("gl.session");
+    location.reload();
+  } catch { say("That file isn't a Gold Ledger backup."); }
+});
 
 $("calc").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -1761,6 +1770,12 @@ function gateField(id, label, auto) {
   const i = document.createElement("input"); i.type = "password"; i.id = id; i.autocomplete = auto;
   f.append(l, i); return f;
 }
+function restoreLink() {
+  const w = el("div", "restorebox");
+  w.append(el("strong", null, "Already have a ledger?"), el("span", null, "Load your backup file and your old passwords and logs will work here."));
+  const b = el("button", "ghost", "Restore from backup"); b.type = "button"; b.addEventListener("click", restoreBackup);
+  w.append(b); return w;
+}
 function renderGate() {
   const card = $("gateCard"); card.replaceChildren();
   if (gateMode === "open") return;
@@ -1784,6 +1799,7 @@ function renderGate() {
     forgot.addEventListener("click", () => go("forgot", "locked"));
     card.append(icon, el("h2", null, "Enter your password"), p("Type your password to open your logs. New here? Create a password to start your own ledger."),
       gateField("g-pw", "Password", "current-password"), err, btns, forgot);
+    if (!window.claude) card.append(restoreLink());
   } else if (gateMode === "create" || gateMode === "new") {
     const first = gateMode === "create";
     primary.textContent = "Create password";
@@ -1797,6 +1813,7 @@ function renderGate() {
     card.append(icon, el("h2", null, first ? "Create your password" : "Create a password"), p(intro + " Write it down: it can't be recovered."),
       gateField("g-new", "New password", "new-password"), gateField("g-confirm", "Confirm password", "new-password"), err, btns);
     if (first) card.append(p("You can create one later with the Create password button under the title.", true));
+    if (first && !window.claude) card.append(restoreLink());
   } else if (gateMode === "change") {
     primary.textContent = "Save";
     btns.append(primary);
