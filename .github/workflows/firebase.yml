@@ -1,4 +1,4 @@
-name: Publish to gold-ledger.web.app
+name: Publish to Firebase Hosting
 on:
   push:
     branches: [main]
@@ -13,10 +13,6 @@ jobs:
       - name: Check for key
         id: key
         run: if [ -n "$KEY" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; else echo "No FIREBASE_SERVICE_ACCOUNT secret yet, skipping."; fi
-      - name: Check key format
-        if: steps.key.outputs.ok == '1'
-        run: |
-          printf '%s' "$KEY" | python3 -c "import json,sys; d=json.load(sys.stdin); print('type:', d.get('type'), '| project:', d.get('project_id'), '| has private key:', 'private_key' in d)"
       - uses: google-github-actions/auth@v2
         if: steps.key.outputs.ok == '1'
         with:
@@ -24,6 +20,12 @@ jobs:
       - name: Deploy
         if: steps.key.outputs.ok == '1'
         run: |
-          npx -y firebase-tools@13 hosting:sites:get gold-ledger --project gold-ledger-96dee \
-            || npx -y firebase-tools@13 hosting:sites:create gold-ledger --project gold-ledger-96dee
-          npx -y firebase-tools@13 deploy --only hosting --project gold-ledger-96dee --non-interactive
+          FB="npx -y firebase-tools@13 --project gold-ledger-96dee"
+          SITE=""
+          for name in goldledger thegoldledger goldledger-app mygoldledger gold-ledger-96dee; do
+            if $FB hosting:sites:get "$name" >/dev/null 2>&1 || $FB hosting:sites:create "$name" >/dev/null 2>&1; then SITE="$name"; break; fi
+          done
+          [ -n "$SITE" ] || { echo "No site name available"; exit 1; }
+          echo "Publishing to https://$SITE.web.app"
+          sed -i "s/\"site\": \"[^\"]*\"/\"site\": \"$SITE\"/" firebase.json
+          $FB deploy --only hosting --non-interactive
